@@ -2,6 +2,11 @@
 .pio/
 .vscode/
 
+# Local Release Binaries & Archives (Upload to GitHub Releases instead of git tracking)
+releases/
+*.7z
+*.zip
+
 # Temporary & Log files
 *.tmp
 *.log
