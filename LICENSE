@@ -1,0 +1,55 @@
+LyRadar Non-Commercial Source License (v1.0)
+Copyright (c) 2026 Zotix (https://github.com/zotix/LyRadar)
+All Rights Reserved.
+
+===============================================================================
+1. GRANT OF LICENSE FOR PERSONAL & NON-COMMERCIAL USE
+===============================================================================
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software, firmware, and associated documentation files (the "Software"), to
+inspect, study, compile, flash, modify, and run the Software solely for:
+  (a) Personal, non-commercial, hobbyist, or household use.
+  (b) Academic, research, or educational purposes without financial gain.
+
+===============================================================================
+2. COMMERCIAL RESTRICTIONS (PAID LICENSE REQUIRED)
+===============================================================================
+Any commercial use, commercial distribution, or monetization of the Software,
+in whole or in part, is STRICTLY PROHIBITED without an explicit, paid Commercial
+License agreement granted in writing by the copyright holder (Zotix).
+
+Prohibited commercial activities include, but are not limited to:
+  (a) Manufacturing, flashing, bundling, or selling physical hardware, microcontrollers
+      (including ESP32-2432S028 / CYD), kits, or assembled devices pre-loaded with
+      the Software or derivative works.
+  (b) Selling, reselling, renting, or leasing the Software, binary firmware images,
+      or modified versions thereof on online marketplaces (e.g., Shopee, Lazada,
+      Amazon, eBay, TikTok Shop) or physical retail stores.
+  (c) Providing paid commercial installation, configuration, or subscription services
+      based on the Software.
+  (d) Integrating the Software into proprietary products or closed-source commercial
+      offerings.
+
+===============================================================================
+3. COMMERCIAL LICENSING INQUIRIES
+===============================================================================
+If you wish to manufacture, sell pre-flashed boards, distribute commercially, or
+incorporate the Software into a commercial product, you MUST obtain a paid
+Commercial License from the author.
+
+To inquire about commercial licensing terms and pricing, please contact:
+  - Repository: https://github.com/zotix/LyRadar
+  - Issues / Discussions: https://github.com/zotix/LyRadar/issues
+  - Author: Zotix
+
+===============================================================================
+4. DISCLAIMER OF WARRANTY & DATA ATTRIBUTION
+===============================================================================
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY.
+
+Weather radar data visualised by the Software is provided publicly by the
+Bangkok Metropolitan Administration (BMA) and the Thai Meteorological Department
+(TMD). All rights to radar imagery belong to their respective government agencies.

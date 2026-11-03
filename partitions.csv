@@ -1,0 +1,6 @@
+# Name,      Type, SubType, Offset,   Size,     Flags
+# app0 = 1.1875 MB (firmware ~0.95 MB), radar_cache = 2.75 MB (2 banks x 0x153000 + 1 scratch slot 0x13000)
+nvs,         data, nvs,     0x9000,   0x5000,
+otadata,     data, ota,     0xe000,   0x2000,
+app0,        app,  ota_0,   0x10000,  0x130000,
+radar_cache, data, 0x99,    0x140000, 0x2C0000,

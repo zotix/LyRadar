@@ -1,0 +1,14 @@
+# PlatformIO & Build output
+.pio/
+.vscode/
+
+# Temporary & Log files
+*.tmp
+*.log
+.DS_Store
+Thumbs.db
+
+# Internal AI / Assistant Rules & Development Logs (Keep on local machine only)
+GEMINI.md
+BACKLOG.md
+docs/BACKLOG.md
