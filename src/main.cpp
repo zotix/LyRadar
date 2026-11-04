@@ -17,61 +17,22 @@ SET_LOOP_TASK_STACK_SIZE(8 * 1024);
 // Touch & Button Input Handler
 // ============================================================================
 static void handleUserInput() {
-    // 1. Physical BOOT Button (GPIO 0):
-    //    - Short press (< 3s): Rotate screen 0° / 180°
-    //    - Hold 3s..9s (release): Launch 3-Corner Touch Calibration (CAL TOUCH)
-    //    - Hold >= 10s: Toggle Display Color Inversion (Invert Display)
-    if (digitalRead(BOOT_BTN_PIN) == LOW) {
-        if (g_standbyMode) {
-            g_standbyMode = false;
-            applyBacklight();
-            g_lastTouchMs = millis();
-            g_lastStationCycleMs = millis();
-            while (digitalRead(BOOT_BTN_PIN) == LOW) delay(15);
-            return;
-        }
+    // 1. Physical BOOT Button (GPIO 0): Universal Handler
+    if (digitalRead(BOOT_BTN_PIN) == LOW && g_standbyMode) {
+        g_standbyMode = false;
+        applyBacklight();
         g_lastTouchMs = millis();
         g_lastStationCycleMs = millis();
-        uint32_t pressStart = millis();
-        bool     shown3s    = false;
+        while (digitalRead(BOOT_BTN_PIN) == LOW) delay(15);
+        return;
+    }
 
-        while (digitalRead(BOOT_BTN_PIN) == LOW) {
-            uint32_t heldMs = millis() - pressStart;
+    GlobalBootAction bootAct = checkGlobalBootButton([&]() {
+        if (g_menuOpen) drawMenuScreen();
+        else            restoreRadarScreen();
+    });
 
-            if (heldMs >= 3000 && !shown3s) {
-                shown3s = true;
-                tft.setTextDatum(MC_DATUM);
-                tft.setTextColor(TFT_BLACK, TFT_YELLOW);
-                tft.drawString(" [3s] RELEASE = CAL TOUCH (10s = INVERT) ", DST_WIDTH / 2, DST_HEIGHT / 2, 2);
-            }
-
-            if (heldMs >= 10000) {
-                g_invertDisplay = !g_invertDisplay;
-                tft.invertDisplay(g_invertDisplay);
-                prefs.begin("radar_cfg", false);
-                prefs.putBool("inv", g_invertDisplay);
-                prefs.end();
-
-                tft.setTextDatum(MC_DATUM);
-                tft.setTextColor(TFT_WHITE, TFT_DARKGREEN);
-                tft.drawString(" [10s] DISPLAY INVERTED! ", DST_WIDTH / 2, DST_HEIGHT / 2, 2);
-                while (digitalRead(BOOT_BTN_PIN) == LOW) delay(15);
-                if (g_menuOpen) drawMenuScreen();
-                else            restoreRadarScreen();
-                return;
-            }
-            delay(15);
-        }
-
-        uint32_t totalHeld = millis() - pressStart;
-        if (totalHeld >= 3000) {
-            // Released between 3s and 10s -> Calibrate Touch!
-            runTouchCalibration();
-            if (g_menuOpen) drawMenuScreen();
-            else            restoreRadarScreen();
-            return;
-        }
-
+    if (bootAct == BOOT_ACT_SHORT_PRESS) {
         // Released < 3s -> If menu or timelapse is open, close it; otherwise Rotate screen 0° / 180°
         if (g_menuOpen || g_timelapseMode) {
             if (g_timelapseMode) {
@@ -87,6 +48,8 @@ static void handleUserInput() {
         prefs.putBool("flip", g_flipScreen);
         prefs.end();
         restoreRadarScreen();
+        return;
+    } else if (bootAct != BOOT_ACT_NONE) {
         return;
     }
 
@@ -249,6 +212,10 @@ void setup() {
     }
 
     touch.begin();
+    if (digitalRead(BOOT_BTN_PIN) == LOW) {
+        Serial.println("[BOOT] BOOT button held at startup -> Launching Touch Calibration!");
+        runTouchCalibration();
+    }
     initSdCard(); // MicroSD on VSPI (CS=5) - separate bus from TFT (HSPI) and touch (bit-bang)
 
     radarPartition = esp_partition_find_first(

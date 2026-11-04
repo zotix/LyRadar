@@ -352,6 +352,67 @@ static void runTouchCalibration() {
 }
 
 // ============================================================================
+// Global Physical BOOT Button Handler (Universal across ALL screens)
+// 3s = Touch Calibration, 10s = Invert Display, <3s = Short-Press Action
+// ============================================================================
+enum GlobalBootAction {
+    BOOT_ACT_NONE = 0,
+    BOOT_ACT_SHORT_PRESS,
+    BOOT_ACT_CALIBRATED,
+    BOOT_ACT_INVERTED
+};
+
+template <typename F>
+static GlobalBootAction checkGlobalBootButton(F onRedraw) {
+    if (digitalRead(BOOT_BTN_PIN) != LOW) {
+        return BOOT_ACT_NONE;
+    }
+
+    g_lastTouchMs = millis();
+    g_lastStationCycleMs = millis();
+    uint32_t pressStart = millis();
+    bool shown3s = false;
+
+    while (digitalRead(BOOT_BTN_PIN) == LOW) {
+        uint32_t heldMs = millis() - pressStart;
+
+        if (heldMs >= 3000 && !shown3s) {
+            shown3s = true;
+            tft.setTextDatum(MC_DATUM);
+            tft.setTextColor(TFT_BLACK, TFT_YELLOW);
+            tft.drawString(" [3s] RELEASE = CAL TOUCH (10s = INVERT) ", DST_WIDTH / 2, DST_HEIGHT / 2, 2);
+        }
+
+        if (heldMs >= 10000) {
+            g_invertDisplay = !g_invertDisplay;
+            tft.invertDisplay(g_invertDisplay);
+            prefs.begin("radar_cfg", false);
+            prefs.putBool("inv", g_invertDisplay);
+            prefs.end();
+
+            tft.setTextDatum(MC_DATUM);
+            tft.setTextColor(TFT_WHITE, TFT_DARKGREEN);
+            tft.drawString(" [10s] DISPLAY INVERTED! ", DST_WIDTH / 2, DST_HEIGHT / 2, 2);
+            while (digitalRead(BOOT_BTN_PIN) == LOW) delay(15);
+            onRedraw();
+            return BOOT_ACT_INVERTED;
+        }
+        delay(15);
+    }
+
+    uint32_t totalHeld = millis() - pressStart;
+    if (totalHeld >= 3000) {
+        // Released between 3s and 10s -> Calibrate Touch!
+        runTouchCalibration();
+        onRedraw();
+        return BOOT_ACT_CALIBRATED;
+    }
+
+    // Released < 3s -> Short press
+    return BOOT_ACT_SHORT_PRESS;
+}
+
+// ============================================================================
 // Interactive Menu Screen (Long-Press >= 500ms on Touch Screen)
 // ============================================================================
 static void drawMenuBtn(int x, int y, int w, int h, const char* label, bool active, uint16_t activeBg = TFT_DARKGREEN, uint16_t activeBorder = TFT_GREEN) {
@@ -591,10 +652,15 @@ static void drawAboutScreen() {
     waitTouchRelease();
     uint32_t startMs = millis();
     while (millis() - startMs < 60000UL) {
-        if (digitalRead(BOOT_BTN_PIN) == LOW) {
-            while (digitalRead(BOOT_BTN_PIN) == LOW) delay(15);
+        GlobalBootAction act = checkGlobalBootButton([&]() {
+            drawAboutScreen();
+        });
+        if (act == BOOT_ACT_SHORT_PRESS) {
             break;
+        } else if (act != BOOT_ACT_NONE) {
+            return;
         }
+
         int tx = 0, ty = 0;
         if (touch.readTouch(tx, ty, g_flipScreen, g_touchMapMode)) {
             waitTouchRelease();
@@ -850,20 +916,25 @@ static void runCaptivePortalSetup() {
 
     server.begin();
 
-    tft.fillScreen(TFT_BLACK);
-    tft.setTextColor(TFT_CYAN, TFT_BLACK);
-    tft.setTextDatum(MC_DATUM);
-    tft.drawString("WiFi Setup Mode", DST_WIDTH / 2, 40, 4);
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft.drawString("1. Connect phone WiFi to:", DST_WIDTH / 2, 95, 2);
-    tft.setTextColor(TFT_YELLOW, TFT_BLACK);
-    tft.drawString(CAPTIVE_PORTAL_SSID, DST_WIDTH / 2, 125, 4);
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft.drawString("2. Open browser at:", DST_WIDTH / 2, 170, 2);
-    tft.setTextColor(TFT_GREEN, TFT_BLACK);
-    tft.drawString(apIP.toString(), DST_WIDTH / 2, 200, 4);
+    auto redrawPortal = [&]() {
+        tft.fillScreen(TFT_BLACK);
+        tft.setTextColor(TFT_CYAN, TFT_BLACK);
+        tft.setTextDatum(MC_DATUM);
+        tft.drawString("WiFi Setup Mode", DST_WIDTH / 2, 40, 4);
+        tft.setTextColor(TFT_WHITE, TFT_BLACK);
+        tft.drawString("1. Connect phone WiFi to:", DST_WIDTH / 2, 95, 2);
+        tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+        tft.drawString(CAPTIVE_PORTAL_SSID, DST_WIDTH / 2, 125, 4);
+        tft.setTextColor(TFT_WHITE, TFT_BLACK);
+        tft.drawString("2. Open browser at:", DST_WIDTH / 2, 170, 2);
+        tft.setTextColor(TFT_GREEN, TFT_BLACK);
+        tft.drawString(apIP.toString(), DST_WIDTH / 2, 200, 4);
+    };
+
+    redrawPortal();
 
     while (!configured) {
+        checkGlobalBootButton(redrawPortal);
         dnsServer.processNextRequest();
         server.handleClient();
         delay(5);
@@ -1003,6 +1074,15 @@ static bool runTouchKeyboard(const String& ssid, String& pass) {
     waitTouchRelease();
 
     while (true) {
+        GlobalBootAction act = checkGlobalBootButton([&]() {
+            drawFullKeyboard(ssid, pass, showPass, shiftMode, symMode);
+        });
+        if (act == BOOT_ACT_SHORT_PRESS) {
+            return false; // Short press BOOT = Cancel / Back to scan list
+        } else if (act != BOOT_ACT_NONE) {
+            continue;
+        }
+
         int tx = 0, ty = 0;
         if (touch.readTouch(tx, ty, g_flipScreen, g_touchMapMode)) {
             // 1. Top Controls (y < 24)
@@ -1331,6 +1411,15 @@ static bool runWiFiScannerAndKeyboard() {
     String enteredPass = "";
 
     while (true) {
+        GlobalBootAction act = checkGlobalBootButton([&]() {
+            drawScanPage(nets, netCount, currentPage, totalPages);
+        });
+        if (act == BOOT_ACT_SHORT_PRESS) {
+            return false; // Short press BOOT = Cancel / Back to menu
+        } else if (act != BOOT_ACT_NONE) {
+            continue;
+        }
+
         int tx = 0, ty = 0;
         if (touch.readTouch(tx, ty, g_flipScreen, g_touchMapMode)) {
             // Header buttons
