@@ -5,7 +5,7 @@
 [![License: Non-Commercial](https://img.shields.io/badge/License-Non--Commercial-red.svg)](LICENSE)
 [![Platform: ESP32](https://img.shields.io/badge/Platform-ESP32--2432S028-yellow.svg)](https://docs.platformio.org/page/boards/espressif32/esp32dev.html)
 [![Framework: Arduino](https://img.shields.io/badge/Framework-Arduino-blue.svg)](https://www.arduino.cc/)
-[![Version: v1.0.0](https://img.shields.io/badge/Version-v1.0.0-green.svg)](https://github.com/zotix/LyRadar/releases)
+[![Version: v1.0.1](https://img.shields.io/badge/Version-v1.0.1-green.svg)](https://github.com/zotix/LyRadar/releases)
 
 ---
 
