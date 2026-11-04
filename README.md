@@ -108,9 +108,15 @@ pio run -e cyd_1usb_ili9341 -t upload
 
 ## ☕ สนับสนุนผู้พัฒนา (Buy Me a Coffee)
 
-หากคุณชื่นชอบโปรเจกต์ **LyRadar** และต้องการสนับสนุนค่าน้ำค่ากาแฟผู้พัฒนา สามารถร่วมสนับสนุนได้ผ่านระบบ **PromptPay**:
+หากคุณชื่นชอบโปรเจกต์ **LyRadar CYD** และต้องการร่วมสนับสนุนค่าน้ำค่ากาแฟในการพัฒนาต่อยอด สามารถร่วมสนับสนุนผ่านระบบ **PromptPay** ได้โดยตรง:
 
-- สแกน QR Code PromptPay ได้โดยตรงจากหน้า **`[ABOUT]`** บนหน้าจอบอร์ด CYD
+<div align="center">
+  <img src="docs/images/promptpay_qr.png" width="220" alt="PromptPay QR Code">
+  <br>
+  <em>สแกนผ่านแอปพลิเคชันธนาคารเพื่อสนับสนุนผู้พัฒนา (Zotix) ☕</em>
+</div>
+
+- หรือสแกน QR Code PromptPay ได้โดยตรงจากหน้า **`[ABOUT]`** บนหน้าจอบอร์ด CYD
 - หรือใส่ภาพ QR Code ของคุณลงใน MicroSD Card ที่ `/ly-radar/promptpay.bmp`
 
 ---
