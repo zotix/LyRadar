@@ -1,148 +1,154 @@
+<div align="center">
+
 # LyRadar CYD 🌦️📡
 
-**Live Weather Radar Display for ESP32-2432S028 (Cheap Yellow Display - CYD)**
+**Real-Time Animated Weather Radar Display for ESP32-2432S028 (Cheap Yellow Display - CYD)**
+
+[ 🇬🇧 English ](README.md) | [ 🇹🇭 ภาษาไทย ](README_TH.md)
 
 [![License: Non-Commercial](https://img.shields.io/badge/License-Non--Commercial-red.svg)](LICENSE)
 [![Platform: ESP32](https://img.shields.io/badge/Platform-ESP32--2432S028-yellow.svg)](https://docs.platformio.org/page/boards/espressif32/esp32dev.html)
 [![Framework: Arduino](https://img.shields.io/badge/Framework-Arduino-blue.svg)](https://www.arduino.cc/)
 [![Version: v1.3.0](https://img.shields.io/badge/Version-v1.3.0-green.svg)](https://github.com/zotix/LyRadar/releases)
 
+</div>
+
 ---
 
 <div align="center">
   <img src="docs/images/cyd_board_v130.jpg" width="48%" alt="LyRadar CYD Live Radar View" />
   <img src="docs/images/cyd_board_v130_2.jpg" width="48%" alt="LyRadar CYD Touch Menu & Playlist" />
-  <p><em>หน้าจอแสดงผลสดเรดาร์ตรวจอากาศ (TMD-SVP สุวรรณภูมิ 240km) และหน้าจอสัมผัสควบคุม 12 สถานีเรดาร์ทั่วไทย บนบอร์ด ESP32-2432S028 (CYD)</em></p>
+  <p><em>Live weather radar animation (TMD-SVP Suvarnabhumi 240km) and 12-station touch menu with custom playlist filter on the ESP32-2432S028 (CYD) board.</em></p>
 </div>
 
 ---
 
-## 📖 ภาพรวมโครงการ (Overview)
+## 📖 Overview
 
-**LyRadar CYD** คือเฟิร์มแวร์แสดงผลภาพเรดาร์ตรวจอากาศแบบเคลื่อนไหว (Animated Weather Radar Loops) สำหรับบอร์ด **ESP32-2432S028 (CYD)** หน้าจอสีสัมผัสขนาด 2.8 นิ้ว 
+**LyRadar CYD** is a specialized, high-performance weather radar animation firmware designed for the popular **ESP32-2432S028 (CYD)** 2.8" color touch display.
 
-ออกแบบสถาปัตยกรรมระดับฮาร์ดแวร์โดยใช้ **Dual-Core FreeRTOS**, หน่วยความจำแคช **Double-Buffered Flash (2.75 MB)** ร่วมกับ **MicroSD Card Pre-Caching** เพื่อให้การเล่นภาพแอนิเมชัน 12 เฟรมลื่นไหลระดับ 350ms ไม่มีอาการกระตุกหรือจอดำ พร้อมระบบประหยัดพลังงานอัจฉริยะ (Deep Power Optimization)
+Engineered at the bare-metal level using **Dual-Core FreeRTOS**, **Double-Buffered Flash Cache (2.75 MB)**, and **MicroSD Card Pre-Caching**, it delivers buttery-smooth 12-frame radar loop playback at 350ms per frame with zero screen tearing and instant station transitions. Version 1.3.0 brings **Deep Power Optimization**, reducing overall current draw by ~65% while keeping the ESP32 running cool at ambient temperature.
 
 ---
 
-## ✨ คุณสมบัติเด่น (Key Features)
+## ✨ Key Features
 
-- 📡 **รองรับ 12 สถานีเรดาร์ทั่วประเทศไทย**:
-  - **กรุงเทพฯ และปริมณฑล (กทม. BMA)**: หนองแขม (`NK`), หนองจอก (`NC`)
-  - **กรมอุตุนิยมวิทยา (TMD)**: สุวรรณภูมิ 240km (`SVP`), สมุทรสงคราม (`SKM`), ระยอง (`RYG`), เชียงราย (`CRI`), ขอนแก่น (`KKN`), อุบลราชธานี (`UBN`), พิษณุโลก (`PHS`), สุราษฎร์ธานี (`SRT`), ภูเก็ต (`PKT`), สทิงพระ สงขลา (`STP`)
-- 🔍 **โหมดซูมเต็มรูปแบบ 12 เฟรม (Full 12-Frame HD Zoom & Instant Zoom)**:
-  - แตะจุดไหนบนแผนที่ ซูมเข้าจุดนั้นทันทีแบบไร้รอยต่อ ไม่มีข้ามเฟรม ด้วยความเร็ว 350ms
-  - ระบบ Pre-caching เบื้องหลังสร้างไฟล์ไบนารี HD Zoom 1:1 (`.z12`) เก็บลง MicroSD Card เพื่อความคมชัดสูงสุด
-- 🌤️ **แถบสภาพอากาศสด Top HUD Weather Bar**:
-  - ดึงข้อมูลสภาพอากาศแบบ Real-time จาก Open-Meteo API อ้างอิงพิกัดสถานี
-  - พิกเซลไมโครไอคอนสภาพอากาศ (☀️, ⛅, 🌧️, ⛈️), อุณหภูมิ, ความชื้น และเปอร์เซ็นต์ฝนพร้อมแท็กความแรง (`L`, `M`, `H`)
-  - เรนเดอร์ลงใน Sprite Buffer ทุกๆ 350ms แบบ Zero-Flicker ไร้การกระพริบ
-- 🎯 **ระบบ Station Playlist Filter (ขอบสีเหลือง)**:
-  - กดค้างที่ปุ่มสถานีใดๆ ในหน้าเมนู เพื่อเลือกเฉพาะสถานีที่ต้องการเข้า Playlist
-  - โหมด AUTO จะวนลูปเล่นเฉพาะสถานีที่เลือกไว้ พร้อมแสดงตัวเลขจำนวนสถานีที่ปุ่ม `AUTO`
-- 🔘 **ปุ่มเมนูอัจฉริยะ 2 บรรทัด (2-Line Action Buttons)**:
-  - ปุ่ม `AUTO`: แสดงสถานะการวนลูปและจำนวนสถานีใน Playlist (เช่น `AUTO 5`, `AUTO ALL`, `AUTO OFF`)
-  - ปุ่ม `BRI`: แสดงระดับความสว่างหน้าจอปัจจุบัน (`AUTO`, `100%`, `55%`, `20%`)
-- 🚀 **Background Pre-Caching ลง MicroSD Card**:
-  - Core 0 ทยอยดาวน์โหลดแคชเก็บไว้ที่ `/ly-radar/cache/sta_<id>.gif` เบื้องหลัง
-  - สลับเปลี่ยนสถานีได้ทันทีในเวลา **< 0.3 วินาที** จาก SD Card โดยไม่ต้องรอโหลดเน็ตใหม่
-- 🔄 **โหมด AUTO วนลูปสลับสถานีอัตโนมัติ (Kiosk Slideshow)**:
-  - สลับสถานีทุกๆ 30 วินาที พร้อมระบบข้ามสถานีที่ยังโหลดไม่เสร็จ (Skip unready)
-  - หน้าจอ Clean Display ซ่อนป้ายเทคนิค คงไว้เฉพาะป้ายแจ้งเตือนสภาพอากาศ `RAIN XX%`
-  - หยุดวนลูปชั่วคราวเมื่อแตะซูม และมี Inactivity Watchdog 3 นาทีกลับสู่โหมด AUTO อัตโนมัติ
-- 🍃 **ระบบประหยัดพลังงานขั้นสูง (Deep Power Optimization v1.3.0)**:
-  - **WiFi Modem-Sleep (`WIFI_PS_MIN_MODEM`)**: ชิปวิทยุหลับระหว่างรอบ DTIM Beacon ลดกระแส WiFi ลงจาก ~100 mA เหลือเพียง **~15–20 mA**
-  - **Hybrid Clock Scaling (80 ↔ 240 MHz)**: วิ่งที่ 80 MHz ช่วงเล่นภาพ/สแตนด์บาย (APB bus 80 MHz เต็มสปีด SPI) และบูสต์ 240 MHz เฉพาะช่วงดาวน์โหลด HTTPS และถอดรหัส
-  - **Smart Eco Standby**: หรี่ไฟจอลงสู่ duty 30 (~12%) อัตโนมัติเมื่อไม่มีการแตะจอเกิน 3 นาทีและไม่มีฝนตก พร้อมตื่นทันทีเมื่อแตะหน้าจอ กดปุ่ม หรือตรวจพบฝนตก $\ge 1\%$
-  - **ประหยัดพลังงานรวมสูงสุดถึง ~65%** (กินกระแสปกติเพียง **~75–90 mA @ 5V** เทียบกับเดิม ~250–280 mA) ชิปเย็นลงอย่างเห็นได้ชัด
+- 📡 **12 Weather Radar Stations Across Thailand**:
+  - **Bangkok Metropolitan (BMA)**: Nong Khaem (`NK`), Nong Chok (`NC`)
+  - **Thai Meteorological Department (TMD)**: Suvarnabhumi 240km (`SVP`), Samut Songkhram (`SKM`), Rayong (`RYG`), Chiang Rai (`CRI`), Khon Kaen (`KKN`), Ubon Ratchathani (`UBN`), Phitsanulok (`PHS`), Surat Thani (`SRT`), Phuket (`PKT`), Sathing Phra Songkhla (`STP`)
+- 🔍 **Full 12-Frame HD Zoom & Instant Digital Zoom**:
+  - Tap anywhere on the radar map to instantly zoom into that exact location.
+  - Plays all 12 frames (`1/12` to `12/12`) smoothly at 350ms with no frame jumping.
+  - Background worker automatically pre-caches 1:1 HD zoom binary files (`.z12`) to the MicroSD card during idle time for pixel-perfect sharpness.
+- 🌤️ **Top HUD Live Weather Bar**:
+  - Fetches real-time weather data from Open-Meteo API using station coordinates.
+  - Custom pixel micro-icons (☀️, ⛅, 🌧️, ⛈️), ambient temperature, humidity, and rain echo percentage with intensity badges (`L`, `M`, `H`).
+  - Rendered inside the 16-line sprite buffer every 350ms for zero-flicker graphics.
+- 🎯 **Station Playlist Filter (Yellow Borders)**:
+  - Long-press (≥380ms) on any station button in the menu to add or remove it from your custom playback playlist (highlighted with double yellow borders).
+  - AUTO mode cycles exclusively through selected playlist stations and displays the count directly on the `AUTO` button.
+- 🔘 **2-Line Smart Action Buttons**:
+  - `AUTO` button: Shows cycling status and station count (`AUTO 5`, `AUTO ALL`, `AUTO OFF`).
+  - `BRI` button: Displays current brightness level (`AUTO`, `100%`, `55%`, `20%`).
+- 🚀 **Background Pre-Caching to MicroSD**:
+  - Core 0 silently downloads and stores upcoming radar loops in `/ly-radar/cache/sta_<id>.gif`.
+  - Switching between stations occurs almost instantaneously (**< 0.3s**) directly from the SD card without network delays.
+- 🔄 **Kiosk Slideshow AUTO Mode**:
+  - Automatically advances through radar stations every 30 seconds.
+  - Automatically pauses on touch or zoom and resumes via a 3-minute inactivity watchdog.
+- 🍃 **Deep Power Optimization (v1.3.0)**:
+  - **WiFi Modem-Sleep (`WIFI_PS_MIN_MODEM`)**: Radio sleeps between AP DTIM beacon intervals, cutting WiFi idle draw from ~100 mA down to **~15–20 mA** without dropping connection.
+  - **Hybrid Clock Scaling (80 ↔ 240 MHz)**: Runs at 80 MHz base clock during playback and standby (maintaining full 80 MHz APB bus for high-speed SPI display transfers) and boosts dynamically to 240 MHz during TLS downloads and GIF decompression.
+  - **Smart Eco Standby Dimming**: Automatically dims backlight to duty 30 (~12%) after 3 minutes of inactivity when no rain is detected (`rain < 1%`). Wakes immediately on touch, BOOT button press, or rain detection (`rain >= 1%`).
+  - **~65% Total Operational Power Reduction**: Operating power drops from ~250–280 mA to **~75–90 mA @ 5V**, keeping the board completely cool.
 - ⌨️ **On-Screen WiFi Scanner & 5-Row Touch Keyboard**:
-  - สแกนหาคลื่น 2.4 GHz บนหน้าจอ พร้อมคีย์บอร์ดสัมผัส 5 แถวที่มีแถวตัวเลข 0–9 กดง่ายไม่ต้องสลับโหมด
-  - รองรับการตั้งค่า WiFi อัตโนมัติผ่านไฟล์ `/ly-radar/wifi.txt` บน MicroSD Card
-- 🔘 **ปุ่มลัดฮาร์ดแวร์ (Physical BOOT Button - GPIO 0)**:
-  - กดสั้น (< 3s): ปิดเมนู หรือหมุนหน้าจอ 0° / 180°
-  - กดค้าง 3s..9s: เข้าสู่หน้า 3-Point Touch Calibration
-  - กดค้าง $\ge 10$s: สลับโหมดสีจอ Invert Display
+  - Scans 2.4 GHz WiFi networks with an intuitive 5-row touch keyboard featuring a dedicated `0–9` number row.
+  - Supports automated WiFi setup via `/ly-radar/wifi.txt` on the MicroSD card.
+- 🔘 **Physical BOOT Button (GPIO 0) Shortcuts**:
+  - Short press (< 3s): Close open menu or rotate screen 0° / 180°.
+  - Long press (3s..9s): Launch 3-point touch screen calibration.
+  - Extra-long press (≥ 10s): Toggle screen color inversion.
 
 ---
 
-## 🛠️ ฮาร์ดแวร์ที่รองรับ (Supported Hardware)
+## 🛠️ Supported Hardware
 
-- **ESP32-2432S028** (บอร์ด Cheap Yellow Display - CYD หน้าจอ 2.8 นิ้ว 320×240)
-  - รุ่น 2-USB (ชิปจอ ST7789, ทัช XPT2046) — *Environment หลัก: `cyd_2usb_st7789`*
-  - รุ่น 1-USB (ชิปจอ ILI9341, ทัช XPT2046) — *Environment: `cyd_1usb_ili9341`*
-- **MicroSD Card**: ฟอร์แมตแบบ FAT32 เสียบเข้าช่องด้านหลังบอร์ด (เชื่อมต่อผ่านขา VSPI)
+- **ESP32-2432S028** (Cheap Yellow Display - CYD 2.8" 320×240 TFT Touch)
+  - 2-USB version (ST7789 display controller, XPT2046 touch) — *Default environment: `cyd_2usb_st7789`*
+  - 1-USB version (ILI9341 display controller, XPT2046 touch) — *Environment: `cyd_1usb_ili9341`*
+- **MicroSD Card**: Formatted as FAT32, inserted into the rear slot (connected via VSPI bus).
 
-ดูรายละเอียดพินทั้งหมดได้ที่ [docs/hardware_notes.md](docs/hardware_notes.md)
+See [docs/hardware_notes.md](docs/hardware_notes.md) for full GPIO pinout mappings.
 
 ---
 
-## 📦 โครงสร้างไฟล์ใน MicroSD Card (`/ly-radar/`)
+## 📦 MicroSD Card Directory Structure (`/ly-radar/`)
 
 ```text
 SD Card Root/
 └── ly-radar/
-    ├── wifi.txt          # ตั้งค่า WiFi อัตโนมัติ (บรรทัด 1 = SSID, บรรทัด 2 = Password)
-    ├── log.txt           # บันทึกสถานะการบูตและการเชื่อมต่อ
-    ├── rain.csv          # สถิติปริมาณฝนสะสม
-    ├── zoom/             # แคชภาพ 12 เฟรม HD Zoom 1:1 (.z12)
-    └── cache/            # แคชภาพเรดาร์แต่ละสถานี (sta_0.gif .. sta_11.gif)
+    ├── wifi.txt          # Automatic WiFi configuration (Line 1 = SSID, Line 2 = Password)
+    ├── log.txt           # Boot diagnostics and runtime logs
+    ├── rain.csv          # Accumulated rain statistics
+    ├── zoom/             # Cached 12-frame 1:1 HD zoom binaries (sta_<id>.z12)
+    └── cache/            # Cached full-frame radar loops (sta_0.gif .. sta_11.gif)
 ```
 
 ---
 
-## 💻 วิธีการคอมไพล์และติดตั้ง (Build & Flash)
+## 💻 Building and Flashing
 
-โปรเจกต์นี้พัฒนาบน **PlatformIO** แนะนำให้ติดตั้ง PlatformIO IDE หรือ PlatformIO Core CLI:
+This project is built using **PlatformIO**. Install PlatformIO IDE (VS Code extension) or PlatformIO Core CLI:
 
 ```bash
-# 1. Clone repository
+# 1. Clone the repository
 git clone https://github.com/zotix/LyRadar.git
 cd LyRadar
 
-# 2. คอมไพล์และอัปโหลดสำหรับรุ่น 2-USB (ST7789)
+# 2. Build and upload for 2-USB model (ST7789)
 pio run -e cyd_2usb_st7789 -t upload
 
-# หรือสำหรับรุ่น 1-USB (ILI9341)
+# Or build and upload for 1-USB model (ILI9341)
 pio run -e cyd_1usb_ili9341 -t upload
 ```
 
 ---
 
-## 📜 ข้อกำหนดลิขสิทธิ์และการจำหน่าย (License Terms)
+## 📜 License Terms
 
-ลิขสิทธิ์ซอฟต์แวร์เป็นของ **© 2026 Zotix. All Rights Reserved.**
+Software copyright is owned by **© 2026 Zotix. All Rights Reserved.**
 
-### 1. การใช้งานส่วนบุคคล (Personal / Non-Commercial Use) — ฟรี 100%
-อนุญาตให้บุคคลทั่วไปดาวน์โหลด ดัดแปลง คอมไพล์ และแฟลชลงบอร์ดของตนเอง เพื่อการศึกษา ค้นคว้า หรือใช้งานส่วนตัวภายในบ้านได้ฟรี
+### 1. Personal / Non-Commercial Use — 100% Free
+Individuals are free to download, modify, compile, and flash this firmware onto their own hardware for personal, non-commercial, and educational purposes.
 
-### 2. เงื่อนไขเชิงพาณิชย์ (Commercial Use) — ⚠️ ต้องซื้อไลเซนส์
-**ห้ามมิให้นำซอฟต์แวร์หรือเฟิร์มแวร์นี้ไปใช้ในเชิงพาณิชย์ แฟลชใส่บอร์ดสำเร็จรูปเพื่อวางจำหน่าย (เช่น Shopee, Lazada, TikTok Shop, หน้าร้าน) หรือแสวงหากำไรโดยเด็ดขาด**
+### 2. Commercial Use — ⚠️ License Required
+**Commercial use, including pre-flashing onto boards for commercial sale (e.g. Shopee, Lazada, TikTok Shop, Amazon, retail stores) or any monetization, is strictly prohibited without written consent.**
 
-> **ต้องการนำไปผลิตจำหน่ายเชิงพาณิชย์?**  
-> หากต้องการสิทธิ์ในการจำหน่ายตัวบอร์ดที่แฟลชเฟิร์มแวร์นี้ **ต้องติดต่อขอซื้อ Commercial License จากผู้พัฒนา (Zotix) ก่อนนำไปจำหน่ายทุกกรณี**  
-> ติดต่อสอบถามได้ที่: [https://github.com/zotix/LyRadar/issues](https://github.com/zotix/LyRadar/issues)
+> **Interested in commercial distribution?**  
+> To obtain commercial licensing rights for distributing pre-flashed boards, **contact the developer (Zotix)** via GitHub Issues:  
+> [https://github.com/zotix/LyRadar/issues](https://github.com/zotix/LyRadar/issues)
 
-อ่านรายละเอียดฉบับเต็มได้ที่ไฟล์ [LICENSE](LICENSE)
+See [LICENSE](LICENSE) for full details.
 
 ---
 
-## ☕ สนับสนุนผู้พัฒนา (Buy Me a Coffee)
+## ☕ Support the Developer (Buy Me a Coffee)
 
-หากคุณชื่นชอบโปรเจกต์ **LyRadar CYD** และต้องการร่วมสนับสนุนค่าน้ำค่ากาแฟในการพัฒนาต่อยอด สามารถร่วมสนับสนุนผ่านระบบ **PromptPay** ได้โดยตรง:
+If you enjoy **LyRadar CYD** and would like to support future development, you can scan the PromptPay QR code below:
 
 <div align="center">
   <img src="docs/images/promptpay_qr.png" width="220" alt="PromptPay QR Code">
   <br>
-  <em>สแกนผ่านแอปพลิเคชันธนาคารเพื่อสนับสนุนผู้พัฒนา (Zotix) ☕</em>
+  <em>Scan with any Thai mobile banking app to support the developer (Zotix) ☕</em>
 </div>
 
-- หรือสแกน QR Code PromptPay ได้โดยตรงจากหน้า **`[ABOUT]`** บนหน้าจอบอร์ด CYD
+- You can also scan the QR code directly from the on-device **`[ABOUT]`** screen.
 
 ---
 
-## 🙏 กิตติกรรมประกาศ (Acknowledgements)
+## 🙏 Acknowledgements
 
-- **สำนักการระบายน้ำ กรุงเทพมหานคร (BMA)**: ข้อมูลภาพเรดาร์ตรวจสภาพอากาศหนองแขมและหนองจอก
-- **กรมอุตุนิยมวิทยา (TMD)**: ข้อมูลภาพเรดาร์ตรวจสภาพอากาศ 10 สถานีภูมิภาคทั่วประเทศ
-- **Bodmer / TFT_eSPI**: ไลบรารีเรนเดอร์กราฟิกหน้าจอ TFT และระบบ Sprite Buffer
-- **Espressif Systems**: แพลตฟอร์ม ESP32, FreeRTOS และชุดพัฒนา Arduino Core
+- **Bangkok Metropolitan Administration (BMA)**: Weather radar data for Nong Khaem and Nong Chok stations.
+- **Thai Meteorological Department (TMD)**: Regional radar imagery covering nationwide stations.
+- **Bodmer / TFT_eSPI**: Embedded graphics rendering engine and sprite buffering.
+- **Espressif Systems**: ESP32 SoC, FreeRTOS implementation, and Arduino Core.
