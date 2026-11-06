@@ -237,6 +237,24 @@ static int decodeGifStream(GifByteStream& stream, int bank, uint16_t reqZoomX, u
     int  subBlockCounter  = 0;
     bool abortedForRecrop = false;
 
+    File zoomOutFile;
+    if (g_sdReady) {
+        if (SD.exists(SD_TMP_ZOOM_PATH)) SD.remove(SD_TMP_ZOOM_PATH);
+        zoomOutFile = SD.open(SD_TMP_ZOOM_PATH, FILE_WRITE);
+        if (zoomOutFile) {
+            ZoomCacheHeader zHdr;
+            memset(&zHdr, 0, sizeof(zHdr));
+            zHdr.magic      = 0x5A4F4F4D;
+            zHdr.sig        = sig;
+            zHdr.frameCount = 0;
+            zHdr.zoomSrcX   = dlZoomX;
+            zHdr.zoomSrcY   = dlZoomY;
+            zHdr.stationId  = dlStation;
+            memcpy(zHdr.palette, g_dlPalette, sizeof(zHdr.palette));
+            zoomOutFile.write((const uint8_t*)&zHdr, sizeof(zHdr));
+        }
+    }
+
     // 3. Parse GIF Blocks & Decode Frames
     while (decodedFrames < MAX_RADAR_FRAMES) {
         if (g_activeBank >= 0 &&
@@ -427,6 +445,7 @@ static int decodeGifStream(GifByteStream& stream, int bank, uint16_t reqZoomX, u
             dlZoomX == g_bankZoomX && dlZoomY == g_bankZoomY && dlStation == g_bankStation &&
             dlZoomX == g_targetZoomX && dlZoomY == g_targetZoomY && dlStation == g_targetStation) {
             Serial.printf("[UPDATE] Radar unchanged (sig %08X) - stopping after Frame 0\n", (unsigned)sig);
+            if (zoomOutFile) { zoomOutFile.close(); SD.remove(SD_TMP_ZOOM_PATH); }
             g_bankErasedTo[bank] = 0;
             g_lastOkUpdateMs = millis();
             return DL_UNCHANGED;
@@ -436,11 +455,24 @@ static int decodeGifStream(GifByteStream& stream, int bank, uint16_t reqZoomX, u
         if ((decodedFrames & 1) == 0) zoomCount++; // Even frames: 2/12, 4/12 ... 12/12
         g_dlFrames          = decodedFrames;
         g_dlZoomReadyFrames = decodedFrames;
+
+        // Stream this frame's 1:1 HD zoom view to SD card
+        if (zoomOutFile) {
+            int fIdx = decodedFrames - 1;
+            uint32_t srcZoomAddr = (fIdx & 1) ? zoomAddr(bank, fIdx / 2) : SCRATCH_ZOOM_ADDR;
+            for (uint32_t off = 0; off < FRAME_BYTES; off += STRIP_BYTES) {
+                if (esp_partition_read(radarPartition, srcZoomAddr + off, g_ws->zoomStripBuf, STRIP_BYTES) == ESP_OK) {
+                    zoomOutFile.write(g_ws->zoomStripBuf, STRIP_BYTES);
+                }
+            }
+        }
+
         Serial.printf("[GIF] Frame %d/%d -> bank %d (%u bytes read)\n",
                       decodedFrames, MAX_RADAR_FRAMES, bank, (unsigned)stream.totalRead());
     }
 
     if (abortedForRecrop) {
+        if (zoomOutFile) { zoomOutFile.close(); SD.remove(SD_TMP_ZOOM_PATH); }
         g_bankErasedTo[bank] = 0;
         return DL_FAIL;
     }
@@ -460,9 +492,10 @@ static int decodeGifStream(GifByteStream& stream, int bank, uint16_t reqZoomX, u
         if (ok) zoomCount = 1;
     }
 
-    // Rain echo percentage in the latest Zoom frame
-    uint8_t  rainPct    = 0;
-    uint32_t rainPixels = 0;
+    // Rain echo percentage & intensity in the latest Zoom frame
+    uint8_t  rainPct      = 0;
+    uint8_t  maxRainLevel = 0; // 0=None, 1=LGT, 2=MOD, 3=HVY
+    uint32_t rainPixels   = 0;
     if (zoomCount > 0) {
         uint32_t lastZoomAddr = zoomAddr(bank, zoomCount - 1);
         int      sc           = 0;
@@ -470,7 +503,12 @@ static int decodeGifStream(GifByteStream& stream, int bank, uint16_t reqZoomX, u
             if ((++sc & 7) == 0) vTaskDelay(1);
             if (esp_partition_read(radarPartition, lastZoomAddr + off, g_ws->zoomStripBuf, STRIP_BYTES) == ESP_OK) {
                 for (size_t i = 0; i < STRIP_BYTES; i++) {
-                    if (g_prio[g_ws->zoomStripBuf[i]] == 3) rainPixels++;
+                    uint8_t p = g_prio[g_ws->zoomStripBuf[i]];
+                    if (p >= 2) {
+                        rainPixels++;
+                        uint8_t lvl = p - 1; // 2->1 (LGT), 3->2 (MOD), 4->3 (HVY)
+                        if (lvl > maxRainLevel) maxRainLevel = lvl;
+                    }
                 }
             }
         }
@@ -509,12 +547,42 @@ static int decodeGifStream(GifByteStream& stream, int bank, uint16_t reqZoomX, u
     hdr.srcHeight  = gifH;
     hdr.stationId  = dlStation;
     hdr.rainPct    = rainPct;
+    hdr.rainLevel  = maxRainLevel;
     memcpy(hdr.palette, g_dlPalette, sizeof(hdr.palette));
 
     if (esp_partition_write(radarPartition, bankBase(bank), &hdr, sizeof(hdr)) != ESP_OK) {
         Serial.println("[FLASH] Header commit failed");
+        if (zoomOutFile) { zoomOutFile.close(); SD.remove(SD_TMP_ZOOM_PATH); }
         g_bankErasedTo[bank] = 0;
         return DL_FAIL;
+    }
+
+    // Finalize 12-frame HD Zoom cache on MicroSD
+    if (zoomOutFile) {
+        if (decodedFrames >= MAX_RADAR_FRAMES) {
+            zoomOutFile.seek(0);
+            ZoomCacheHeader zHdr;
+            memset(&zHdr, 0, sizeof(zHdr));
+            zHdr.magic      = 0x5A4F4F4D;
+            zHdr.sig        = sig;
+            zHdr.frameCount = (uint16_t)decodedFrames;
+            zHdr.zoomSrcX   = dlZoomX;
+            zHdr.zoomSrcY   = dlZoomY;
+            zHdr.stationId  = dlStation;
+            memcpy(zHdr.palette, g_dlPalette, sizeof(zHdr.palette));
+            zoomOutFile.write((const uint8_t*)&zHdr, sizeof(zHdr));
+            zoomOutFile.close();
+
+            char zPath[48];
+            getSdZoomPath(dlStation, zPath, sizeof(zPath));
+            if (SD.exists(zPath)) SD.remove(zPath);
+            if (SD.rename(SD_TMP_ZOOM_PATH, zPath)) {
+                sdLog("[SD-ZOOM] Cached 12-frame HD Zoom for station %u (%s)\n", (unsigned)dlStation, kStations[dlStation].shortCode);
+            }
+        } else {
+            zoomOutFile.close();
+            SD.remove(SD_TMP_ZOOM_PATH);
+        }
     }
 
     // SD-2 & SD-4: Save latest frame to history and log rain statistics
@@ -737,6 +805,66 @@ static bool prefetchStationToSd(uint8_t stationId) {
 }
 
 // ============================================================================
+// Open-Meteo Live Weather Fetcher (Core 0 background task)
+// ============================================================================
+static uint32_t g_lastWeatherAttemptMs = 0;
+
+static void fetchStationWeather(uint8_t stationId) {
+    if (WiFi.status() != WL_CONNECTED || stationId >= NUM_STATIONS) return;
+
+    g_lastWeatherAttemptMs = millis();
+
+    // Guard heap: ensure >= 20 KB heap for HTTP client
+    if (ESP.getMaxAllocHeap() < 20000) {
+        sdLog("[WEATHER] Contiguous heap too low (%u), deferring\n", ESP.getMaxAllocHeap());
+        return;
+    }
+
+    char url[200];
+    snprintf(url, sizeof(url),
+             "http://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f&current=temperature_2m,relative_humidity_2m,weather_code",
+             kStations[stationId].lat, kStations[stationId].lon);
+
+    sdLog("[WEATHER] Querying %s (%.2f, %.2f)...\n",
+          kStations[stationId].shortCode, kStations[stationId].lat, kStations[stationId].lon);
+
+    WiFiClient wClient;
+    wClient.setTimeout(4);
+
+    HTTPClient http;
+    http.begin(wClient, url);
+    http.setTimeout(4000);
+    http.setUserAgent("ESP32-LyRadar/1.3.0");
+
+    int code = http.GET();
+    if (code == HTTP_CODE_OK) {
+        String payload = http.getString();
+        const char* pCur = strstr(payload.c_str(), "\"current\":");
+        if (pCur) {
+            const char* pTemp = strstr(pCur, "\"temperature_2m\":");
+            if (pTemp) {
+                g_stationTemp = (float)atof(pTemp + 17);
+            }
+            const char* pHum = strstr(pCur, "\"relative_humidity_2m\":");
+            if (pHum) {
+                g_stationHumidity = (int8_t)atoi(pHum + 23);
+            }
+            const char* pCode = strstr(pCur, "\"weather_code\":");
+            if (pCode) {
+                g_weatherCode = (int16_t)atoi(pCode + 15);
+            }
+            g_weatherStation = stationId;
+            g_lastWeatherMs  = millis();
+            sdLog("[WEATHER] OK %s: Temp=%.1f C, Hum=%d %%, Code=%d\n",
+                  kStations[stationId].shortCode, g_stationTemp, (int)g_stationHumidity, (int)g_weatherCode);
+        }
+    } else {
+        sdLog("[WEATHER] HTTP error %d\n", code);
+    }
+    http.end();
+}
+
+// ============================================================================
 // FreeRTOS Download Task (Core 0)
 // ============================================================================
 static void downloadTask(void*) {
@@ -752,8 +880,10 @@ static void downloadTask(void*) {
         // 1. SD Card fast path: new zoom crop / station switch decoded locally (no network)
         bool sdServed = false;
         if (g_sdReady && g_forceRecrop) {
+            setCpuFrequencyMhz(240);
             setStatusLed(false, true, true);
             result = recropFromSdCard(target);
+            setCpuFrequencyMhz(80);
             if (result == DL_COMMITTED) {
                 g_forceRecrop = false;
                 sdServed      = true;
@@ -770,8 +900,12 @@ static void downloadTask(void*) {
                 for (int i = 0; i < 40 && WiFi.status() != WL_CONNECTED; i++) vTaskDelay(pdMS_TO_TICKS(250));
             }
             if (WiFi.status() == WL_CONNECTED) {
+                setCpuFrequencyMhz(240);
+                esp_wifi_set_ps(WIFI_PS_NONE);
                 setStatusLed(false, false, true);
                 result = downloadAndDecodeBank(target);
+                esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+                setCpuFrequencyMhz(80);
             } else {
                 g_lastHttpErr = -50;
                 if (result != DL_COMMITTED) result = DL_FAIL;
@@ -782,12 +916,29 @@ static void downloadTask(void*) {
         g_dlZoomReadyFrames = 0;
         setStatusLed(result == DL_FAIL, false, false);
 
+        if (result == DL_FAIL && g_autoCycle && g_targetStation != g_bankStation && g_activeBank >= 0) {
+            sdLog("[AUTO] Station %u failed, resuming active station %u\n", (unsigned)g_targetStation, (unsigned)g_bankStation);
+            g_targetStation = g_bankStation;
+            g_lastStationCycleMs = millis();
+        }
+
         if (!g_forceRecrop) {
             if (result == DL_COMMITTED) {
                 while (g_bankReady) vTaskDelay(pdMS_TO_TICKS(20));
                 preEraseInactiveBank(1 - g_activeBank);
             } else if (result == DL_UNCHANGED && g_activeBank >= 0 && g_bankErasedTo[target] == 0) {
                 preEraseInactiveBank(target);
+            }
+        }
+
+        // 3. Update weather for target station if stale (> 15 min), changed station, or not yet fetched
+        if (WiFi.status() == WL_CONNECTED && !g_forceRecrop) {
+            bool weatherStale = (g_weatherStation != g_targetStation) ||
+                                (millis() - g_lastWeatherMs >= 15UL * 60UL * 1000UL) ||
+                                (g_stationTemp < -90.0f);
+            bool canAttempt   = (millis() - g_lastWeatherAttemptMs >= 60000UL);
+            if (weatherStale && canAttempt) {
+                fetchStationWeather(g_targetStation);
             }
         }
 
@@ -804,6 +955,35 @@ static void downloadTask(void*) {
             while (millis() - idleStart < waitMs) {
                 if (g_forceRecrop || ulTaskNotifyTake(pdTRUE, 0)) break;
 
+                // 1. Pre-cache 12-frame HD Zoom on SD if not yet ready for current target station
+                if (g_sdReady && !g_forceRecrop) {
+                    char targetZPath[48];
+                    getSdZoomPath(g_targetStation, targetZPath, sizeof(targetZPath));
+                    if (!isSdZoomValid(targetZPath, g_targetStation, g_targetZoomX, g_targetZoomY)) {
+                        char rawGifPath[48];
+                        getSdGifPath(g_targetStation, rawGifPath, sizeof(rawGifPath));
+                        if (SD.exists(rawGifPath)) {
+                            sdLog("[SD-ZOOM] Pre-caching 12-frame HD Zoom in background (%s)\n", kStations[g_targetStation].shortCode);
+                            setCpuFrequencyMhz(240);
+                            recropFromSdCard(target);
+                            setCpuFrequencyMhz(80);
+                        }
+                    }
+                }
+
+                // Refresh weather during idle if station changed or stale (at most once per 60s)
+                if (WiFi.status() == WL_CONNECTED) {
+                    bool weatherStale = (g_weatherStation != g_targetStation) ||
+                                        (millis() - g_lastWeatherMs >= 15UL * 60UL * 1000UL) ||
+                                        (g_stationTemp < -90.0f);
+                    bool canAttempt   = (millis() - g_lastWeatherAttemptMs >= 60000UL);
+                    if (weatherStale && canAttempt) {
+                        esp_wifi_set_ps(WIFI_PS_NONE);
+                        fetchStationWeather(g_targetStation);
+                        esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+                    }
+                }
+
                 // Try prefetching next station if SD ready & WiFi connected
                 if (g_sdReady && WiFi.status() == WL_CONNECTED) {
                     nextPrefetch = (nextPrefetch + 1) % NUM_STATIONS;
@@ -812,7 +992,11 @@ static void downloadTask(void*) {
                         char path[48];
                         getSdGifPath(nextPrefetch, path, sizeof(path));
                         if (!SD.exists(path) || age > 12UL * 60UL * 1000UL) {
+                            setCpuFrequencyMhz(240);
+                            esp_wifi_set_ps(WIFI_PS_NONE);
                             prefetchStationToSd(nextPrefetch);
+                            esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+                            setCpuFrequencyMhz(80);
                         }
                     }
                 }

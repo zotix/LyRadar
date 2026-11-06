@@ -19,6 +19,8 @@ struct RadarStationInfo {
     const char* referer;     // HTTP Referer header
     uint16_t    defWidth;    // Default width (overridden dynamically by GIF header)
     uint16_t    defHeight;   // Default height (overridden dynamically by GIF header)
+    float       lat;         // Latitude for Open-Meteo weather
+    float       lon;         // Longitude for Open-Meteo weather
 };
 
 static constexpr uint8_t NUM_STATIONS = 12;
@@ -26,40 +28,40 @@ static constexpr uint8_t NUM_STATIONS = 12;
 static const RadarStationInfo kStations[NUM_STATIONS] = {
     { "BMA-NK",  "BMA Radar: Nong Khaem (BKK W)",
       "https://weather.bangkok.go.th/Radar/ImageHandlerNongkamAni.ashx",
-      "https://weather.bangkok.go.th/Radar/RadarAnimationNk.aspx", 965, 800 },
+      "https://weather.bangkok.go.th/Radar/RadarAnimationNk.aspx", 965, 800, 13.703f, 100.350f },
     { "BMA-NC",  "BMA Radar: Nong Chok (BKK E)",
       "https://weather.bangkok.go.th/Radar/ImageHandlerNongchokAni.ashx",
-      "https://weather.bangkok.go.th/Radar/RadarAnimation.aspx",   965, 800 },
+      "https://weather.bangkok.go.th/Radar/RadarAnimation.aspx",   965, 800, 13.854f, 100.862f },
     { "TMD-SVP", "TMD Radar: Suvarnabhumi (240km)",
       "https://weather.tmd.go.th/svp/svploop.gif",
-      "https://weather.tmd.go.th/svp240loop.php",                  936, 797 },
+      "https://weather.tmd.go.th/svp240loop.php",                  936, 797, 13.690f, 100.750f },
     { "TMD-SKM", "TMD Radar: Samut Songkhram",
       "https://weather.tmd.go.th/skm/skmloop.gif",
-      "https://weather.tmd.go.th/skm240loop.php",                  800, 800 },
+      "https://weather.tmd.go.th/skm240loop.php",                  800, 800, 13.410f,  99.990f },
     { "TMD-RYG", "TMD Radar: Rayong (East)",
       "https://weather.tmd.go.th/ryg/rygloop.gif",
-      "https://weather.tmd.go.th/rygloop.php",                    1087, 800 },
+      "https://weather.tmd.go.th/rygloop.php",                    1087, 800, 12.680f, 101.280f },
     { "TMD-CRI", "TMD Radar: Chiang Rai (North)",
       "https://weather.tmd.go.th/cri/criloop.gif",
-      "https://weather.tmd.go.th/criloop.php",                     800, 800 },
+      "https://weather.tmd.go.th/criloop.php",                     800, 800, 19.960f,  99.880f },
     { "TMD-KKN", "TMD Radar: Khon Kaen (NE)",
       "https://weather.tmd.go.th/kkn/kknloop.gif",
-      "https://weather.tmd.go.th/kkn240loop.php",                  800, 800 },
+      "https://weather.tmd.go.th/kkn240loop.php",                  800, 800, 16.460f, 102.780f },
     { "TMD-SRT", "TMD Radar: Surat Thani (South)",
       "https://weather.tmd.go.th/srt/srtloop.gif",
-      "https://weather.tmd.go.th/srtloop.php",                     800, 800 },
+      "https://weather.tmd.go.th/srtloop.php",                     800, 800,  9.140f,  99.330f },
     { "TMD-PHS", "TMD Radar: Phitsanulok (N-Central)",
       "https://weather.tmd.go.th/phs/phsloop.gif",
-      "https://weather.tmd.go.th/phs240loop.php",                  800, 800 },
+      "https://weather.tmd.go.th/phs240loop.php",                  800, 800, 16.780f, 100.280f },
     { "TMD-UBN", "TMD Radar: Ubon Ratchathani (NE-S)",
       "https://weather.tmd.go.th/ubn/ubnloop.gif",
-      "https://weather.tmd.go.th/ubn240loop.php",                  800, 800 },
+      "https://weather.tmd.go.th/ubn240loop.php",                  800, 800, 15.250f, 104.870f },
     { "TMD-PKT", "TMD Radar: Phuket (South-Andaman)",
       "https://weather.tmd.go.th/pkt/pktloop.gif",
-      "https://weather.tmd.go.th/pkt240loop.php",                  800, 800 },
+      "https://weather.tmd.go.th/pkt240loop.php",                  800, 800,  8.110f,  98.310f },
     { "TMD-STP", "TMD Radar: Sathing Phra (South-Gulf)",
       "https://weather.tmd.go.th/stp/stploop.gif",
-      "https://weather.tmd.go.th/stp240loop.php",                  800, 800 },
+      "https://weather.tmd.go.th/stp240loop.php",                  800, 800,  7.470f, 100.440f },
 };
 
 // ============================================================================
@@ -97,9 +99,10 @@ struct BankHeader {
     uint16_t zoomSrcY;     // Source Y of 320x240 1:1 zoom crop
     uint16_t srcWidth;     // Source GIF width (e.g. 965, 936, 800, 1087)
     uint16_t srcHeight;    // Source GIF height (e.g. 800, 797)
-    uint8_t  stationId;    // 0..7 index into kStations[]
+    uint8_t  stationId;    // 0..11 index into kStations[]
     uint8_t  rainPct;      // 0..100% rain echo coverage in the Zoom region on latest frame
-    uint16_t reserved;
+    uint8_t  rainLevel;    // 0=None, 1=LGT, 2=MOD, 3=HVY
+    uint8_t  reserved;
     uint16_t palette[256];
 };
 
@@ -190,6 +193,14 @@ static uint16_t g_srcWidth       = SRC_WIDTH;
 static uint16_t g_srcHeight      = SRC_HEIGHT;
 static uint8_t  g_bankStation    = 0;
 static uint8_t  g_rainPct        = 0;
+static uint8_t  g_rainLevel      = 0;
+
+// Station live weather from Open-Meteo
+static volatile float    g_stationTemp      = -99.0f; // -99.0f = uninitialized
+static volatile int8_t   g_stationHumidity  = -1;     // -1 = uninitialized
+static volatile int16_t  g_weatherCode      = -1;     // -1 = uninitialized, WMO code 0..99
+static volatile uint8_t  g_weatherStation   = 0xFF;
+static volatile uint32_t g_lastWeatherMs    = 0;
 
 // User-selected target zoom region & station (saved in NVS)
 static volatile uint16_t g_targetZoomX   = ZOOM_SRC_X;
@@ -200,6 +211,7 @@ static char              g_regionName[12] = "CENTER";
 
 static bool     g_zoomMode       = false;
 static bool     g_autoCycle      = true;  // Station auto-cycling (slideshow)
+static uint16_t g_autoStationMask = 0;    // Bitmask of selected yellow stations (0 = all stations)
 static bool     g_standbyMode    = false; // Low-power display standby
 static uint32_t g_lastStationCycleMs = 0;
 static uint32_t g_lastHttpOkMs[NUM_STATIONS] = { 0 };
@@ -268,13 +280,25 @@ static void updateRegionName(uint16_t zx, uint16_t zy) {
 }
 
 static uint8_t classifyColorPriority(uint8_t r, uint8_t g, uint8_t b) {
-    bool isGreenEcho  = (g > r + 35 && g > b + 35);
-    bool isWarmEcho   = (r > 180 && b < 100 && abs((int)r - (int)g) < 180);
+    if (r > 150 && r < 210 && g > 150 && g < 210 && b > 110 && b < 160) {
+        return 1;
+    }
+    // Heavy / Severe Echo (Red, Orange-Red, Purple/Hail ~ 50+ dBZ)
     bool isPurpleEcho = (r > 180 && b > 150 && g < 150);
-    if (isGreenEcho || isWarmEcho || isPurpleEcho) {
-        if (!(r > 150 && r < 210 && g > 150 && g < 210 && b > 110 && b < 160)) {
-            return 3;
-        }
+    bool isRedEcho    = (r > 180 && g < 100 && b < 100);
+    bool isOrangeEcho = (r > 210 && g >= 100 && g <= 170 && b < 80);
+    if (isPurpleEcho || isRedEcho || isOrangeEcho) {
+        return 4; // Priority 4 -> Heavy Rain (Level 3)
+    }
+    // Moderate Echo (Yellow, Amber ~ 35-45 dBZ)
+    bool isYellowEcho = (r > 180 && g > 160 && b < 100);
+    if (isYellowEcho) {
+        return 3; // Priority 3 -> Moderate Rain (Level 2)
+    }
+    // Light Echo (Green, Light Green, Cyan-Green ~ 20-30 dBZ)
+    bool isGreenEcho = (g > r + 35 && g > b + 35);
+    if (isGreenEcho) {
+        return 2; // Priority 2 -> Light Rain (Level 1)
     }
     return 1;
 }

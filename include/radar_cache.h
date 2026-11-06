@@ -17,6 +17,7 @@ static void ensureSdDirs() {
     if (!SD.exists("/ly-radar"))       SD.mkdir("/ly-radar");
     if (!SD.exists("/ly-radar/cache")) SD.mkdir("/ly-radar/cache");
     if (!SD.exists("/ly-radar/hist"))  SD.mkdir("/ly-radar/hist");
+    if (!SD.exists("/ly-radar/zoom"))  SD.mkdir("/ly-radar/zoom");
     for (int i = 0; i < NUM_STATIONS; i++) {
         char sdir[32];
         snprintf(sdir, sizeof(sdir), "/ly-radar/hist/sta_%d", i);
@@ -27,7 +28,39 @@ static void ensureSdDirs() {
 static void getSdGifPath(uint8_t stationId, char* out, size_t cap) {
     snprintf(out, cap, "/ly-radar/cache/sta_%u.gif", (unsigned)(stationId % NUM_STATIONS));
 }
-static const char* SD_TMP_GIF_PATH = "/ly-radar/cache/tmp.gif";
+static const char* SD_TMP_GIF_PATH  = "/ly-radar/cache/tmp.gif";
+static const char* SD_TMP_ZOOM_PATH = "/ly-radar/zoom/tmp.z12";
+
+static void getSdZoomPath(uint8_t stationId, char* out, size_t cap) {
+    snprintf(out, cap, "/ly-radar/zoom/sta_%u.z12", (unsigned)(stationId % NUM_STATIONS));
+}
+
+struct ZoomCacheHeader {
+    uint32_t magic;      // 0x5A4F4F4D ("ZOOM")
+    uint32_t sig;
+    uint16_t frameCount; // 12
+    uint16_t zoomSrcX;
+    uint16_t zoomSrcY;
+    uint8_t  stationId;
+    uint8_t  reserved;
+    uint16_t palette[256];
+};
+
+static bool isSdZoomValid(const char* path, uint8_t stationId, uint16_t zx, uint16_t zy) {
+    if (!g_sdReady || !SD.exists(path)) return false;
+    File f = SD.open(path, FILE_READ);
+    if (!f) return false;
+    ZoomCacheHeader hdr;
+    bool ok = false;
+    if (f.read((uint8_t*)&hdr, sizeof(hdr)) == sizeof(hdr)) {
+        if (hdr.magic == 0x5A4F4F4D && hdr.stationId == (stationId % NUM_STATIONS) &&
+            hdr.zoomSrcX == zx && hdr.zoomSrcY == zy && hdr.frameCount >= MAX_RADAR_FRAMES) {
+            ok = true;
+        }
+    }
+    f.close();
+    return ok;
+}
 
 static bool isStationCacheReady(uint8_t stationId) {
     uint8_t sta = stationId % NUM_STATIONS;
@@ -334,12 +367,13 @@ static bool activateBank(int bank) {
     g_bankZoomY   = (hdr.zoomSrcY <= g_srcHeight - DST_HEIGHT) ? hdr.zoomSrcY : ZOOM_SRC_Y;
     g_bankStation = hdr.stationId % NUM_STATIONS;
     g_rainPct     = hdr.rainPct;
+    g_rainLevel   = hdr.rainLevel;
     g_stepIdx     = 0;
     updateRegionName(g_targetZoomX, g_targetZoomY);
-    Serial.printf("[CACHE] Active bank %d (seq %u, %u full, %u zoom @ %u,%u, dim %ux%u, sta %u, rain %u%%)\n",
+    Serial.printf("[CACHE] Active bank %d (seq %u, %u full, %u zoom @ %u,%u, dim %ux%u, sta %u, rain %u%% lvl %u)\n",
                   bank, (unsigned)hdr.seq, hdr.frameCount, hdr.zoomCount,
                   (unsigned)g_bankZoomX, (unsigned)g_bankZoomY,
-                  (unsigned)g_srcWidth, (unsigned)g_srcHeight, g_bankStation, g_rainPct);
+                  (unsigned)g_srcWidth, (unsigned)g_srcHeight, g_bankStation, g_rainPct, g_rainLevel);
     return true;
 }
 
@@ -542,7 +576,7 @@ struct FrameStreamMapper {
             if (dx >= 0) {
                 if (curDy < DIRECT_ROWS) g_ws->fullStripBuf[fullRowOff + dx] = c;
                 else                     g_ws->fullTailBuf[(curDy - DIRECT_ROWS) * DST_WIDTH + dx] = c;
-            } else if (curDy < DIRECT_ROWS && g_prio[c] == 3 && sx >= 60) {
+            } else if (curDy < DIRECT_ROWS && g_prio[c] >= 2 && sx >= 60) {
                 int mappedDx = ((int)sx * DST_WIDTH) / srcW;
                 if (mappedDx >= 0 && mappedDx < DST_WIDTH) {
                     g_ws->fullStripBuf[fullRowOff + mappedDx] = c;

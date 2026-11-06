@@ -15,7 +15,7 @@ static bool runWiFiScannerAndKeyboard();
 // ============================================================================
 static void applyBacklight() {
     if (g_standbyMode) {
-        ledcWrite(0, 15); // Standby minimum duty (~6%, saves ~50 mA)
+        ledcWrite(0, 30); // Standby minimum duty (~12%, clear enough to see but saves ~80 mA)
         return;
     }
     uint8_t duty = 255;
@@ -54,26 +54,151 @@ static void applyBacklight() {
 // ============================================================================
 // HUD & Radar Frame Rendering (16-line strip sprite -> zero flicker)
 // ============================================================================
-static void drawClockAt(TFT_eSPI& g, int y) {
+static void drawWeatherConditionIcon(TFT_eSPI& g, int x, int y, int16_t code) {
+    if (code == 0) {
+        // ☀️ Clear / Sunny: bright yellow sun with rays
+        g.fillCircle(x + 5, y + 6, 3, TFT_YELLOW);
+        g.drawPixel(x + 5, y + 2, TFT_YELLOW); // N
+        g.drawPixel(x + 5, y + 10, TFT_YELLOW); // S
+        g.drawPixel(x + 1, y + 6, TFT_YELLOW); // W
+        g.drawPixel(x + 9, y + 6, TFT_YELLOW); // E
+        g.drawPixel(x + 2, y + 3, TFT_ORANGE); // NW
+        g.drawPixel(x + 8, y + 3, TFT_ORANGE); // NE
+        g.drawPixel(x + 2, y + 9, TFT_ORANGE); // SW
+        g.drawPixel(x + 8, y + 9, TFT_ORANGE); // SE
+    } else if (code >= 1 && code <= 3) {
+        // ⛅ Cloudy / Partly Cloudy: white-grey cloud with subtle sun peak
+        g.fillCircle(x + 3, y + 4, 2, TFT_YELLOW);
+        g.fillRoundRect(x + 1, y + 5, 9, 5, 2, TFT_LIGHTGREY);
+        g.fillCircle(x + 5, y + 4, 3, TFT_WHITE);
+        g.fillCircle(x + 8, y + 5, 2, TFT_WHITE);
+    } else if ((code >= 51 && code <= 65) || (code >= 80 && code <= 82)) {
+        // 🌧️ Rain / Drizzle: cloud + 2 rain streaks
+        g.fillRoundRect(x + 1, y + 3, 9, 4, 2, TFT_LIGHTGREY);
+        g.fillCircle(x + 5, y + 3, 3, TFT_WHITE);
+        g.drawLine(x + 3, y + 8, x + 2, y + 11, TFT_CYAN);
+        g.drawLine(x + 7, y + 8, x + 6, y + 11, TFT_CYAN);
+    } else if (code >= 95 && code <= 99) {
+        // ⛈️ Thunderstorm: dark cloud + yellow lightning bolt
+        g.fillRoundRect(x + 1, y + 2, 9, 4, 2, 0x632C); // Dark slate
+        g.fillCircle(x + 5, y + 2, 3, TFT_LIGHTGREY);
+        g.drawLine(x + 5, y + 6, x + 3, y + 8, TFT_YELLOW);
+        g.drawLine(x + 3, y + 8, x + 6, y + 8, TFT_YELLOW);
+        g.drawLine(x + 6, y + 8, x + 4, y + 11, TFT_YELLOW);
+    } else {
+        // Default / Unknown: subtle cloud
+        g.fillRoundRect(x + 1, y + 4, 9, 4, 2, TFT_LIGHTGREY);
+        g.fillCircle(x + 5, y + 3, 2, TFT_WHITE);
+    }
+}
+
+static void drawTopHudWeather(TFT_eSPI& g, int y) {
     time_t now = time(nullptr);
     struct tm* ti = localtime(&now);
-    char timeStr[20];
+    char timeStr[12];
     if (ti && ti->tm_year > 120) {
-        snprintf(timeStr, sizeof(timeStr), " %02d:%02d:%02d ", ti->tm_hour, ti->tm_min, ti->tm_sec);
+        snprintf(timeStr, sizeof(timeStr), "%02d:%02d", ti->tm_hour, ti->tm_min);
     } else {
-        snprintf(timeStr, sizeof(timeStr), " --:--:-- ");
+        snprintf(timeStr, sizeof(timeStr), "--:--");
     }
-    g.setTextDatum(TC_DATUM);
+
+    char tempStr[10];
+    if (g_stationTemp > -90.0f) {
+        snprintf(tempStr, sizeof(tempStr), "%.1f", g_stationTemp);
+    } else {
+        snprintf(tempStr, sizeof(tempStr), "--.-");
+    }
+
+    char humStr[8];
+    if (g_stationHumidity >= 0) {
+        snprintf(humStr, sizeof(humStr), "%d%%", (int)g_stationHumidity);
+    } else {
+        snprintf(humStr, sizeof(humStr), "--%%");
+    }
+
+    char rainStr[12];
+    if (g_rainPct > 0) {
+        char lvlChar = (g_rainLevel >= 3) ? 'H' : ((g_rainLevel == 2) ? 'M' : 'L');
+        snprintf(rainStr, sizeof(rainStr), "%u%%%c", (unsigned)g_rainPct, lvlChar);
+    } else {
+        snprintf(rainStr, sizeof(rainStr), "0%%");
+    }
+
+    int timeW = g.textWidth(timeStr, 2);
+    int tempW = g.textWidth(tempStr, 2);
+    int humW  = g.textWidth(humStr, 2);
+    int rainW = g.textWidth(rainStr, 2);
+
+    const int gap = 4;
+    // Time + Weather Icon: timeW + 2 (gap) + 11 (icon) = timeW + 13
+    // Temp: 7 (icon) + 2 (gap) + tempW + 4 (degree) = tempW + 13
+    // Hum:  7 (icon) + 2 (gap) + humW = humW + 9
+    // Rain: 10 (icon) + 2 (gap) + rainW = rainW + 12
+    int totalW = (timeW + 13) + gap + (tempW + 13) + gap + (humW + 9) + gap + (rainW + 12);
+
+    // Center between left station badge (ends ~86) and right frame counter (starts ~268)
+    int leftLimit  = 66;
+    int rightLimit = 268;
+    int startX = leftLimit + (rightLimit - leftLimit - totalW) / 2;
+    if (startX < leftLimit) startX = leftLimit;
+
+    // Solid black pill background for high contrast over radar clouds
+    g.fillRect(startX - 2, y, totalW + 4, 15, TFT_BLACK);
+
+    g.setTextDatum(TL_DATUM);
+
+    // 1. Clock (HH:MM) + Weather Condition Micro-Icon
+    int curX = startX;
     g.setTextColor(TFT_YELLOW, TFT_BLACK);
-    g.drawString(timeStr, DST_WIDTH / 2, y, 2);
+    g.drawString(timeStr, curX, y, 2);
+    curX += timeW + 2;
+    drawWeatherConditionIcon(g, curX, y, g_weatherCode);
+    curX += 11 + gap;
+
+    // 2. Thermometer Micro-Icon (stem + bulb) & Temperature
+    g.fillRect(curX + 2, y + 2, 2, 6, TFT_ORANGE);
+    g.fillCircle(curX + 2, y + 10, 2, TFT_RED);
+    curX += 7 + 2;
+    uint16_t tempColor = (g_stationTemp >= 35.0f) ? TFT_RED : ((g_stationTemp >= 30.0f) ? TFT_ORANGE : TFT_CYAN);
+    if (g_stationTemp < -90.0f) tempColor = TFT_LIGHTGREY;
+    g.setTextColor(tempColor, TFT_BLACK);
+    g.drawString(tempStr, curX, y, 2);
+    curX += tempW;
+    // Degree circle
+    g.drawCircle(curX + 2, y + 3, 1, tempColor);
+    curX += 4 + gap;
+
+    // 3. Water Droplet Micro-Icon & Relative Humidity
+    g.fillTriangle(curX + 3, y + 2, curX, y + 7, curX + 6, y + 7, TFT_CYAN);
+    g.fillCircle(curX + 3, y + 8, 3, TFT_CYAN);
+    curX += 7 + 2;
+    g.setTextColor(TFT_CYAN, TFT_BLACK);
+    g.drawString(humStr, curX, y, 2);
+    curX += humW + gap;
+
+    // 4. Rain Cloud Micro-Icon & Radar Echo Rain % (with L/M/H intensity)
+    g.fillRoundRect(curX, y + 2, 10, 5, 2, TFT_LIGHTGREY);
+    g.fillCircle(curX + 4, y + 2, 2, TFT_WHITE);
+    uint16_t rainColor = (g_rainLevel >= 3 || g_rainPct >= 20) ? TFT_RED
+                       : ((g_rainLevel == 2 || g_rainPct >= 5) ? TFT_YELLOW : TFT_GREENYELLOW);
+    uint16_t dropColor = (g_rainLevel >= 3) ? TFT_RED : ((g_rainLevel == 2) ? TFT_YELLOW : TFT_CYAN);
+    g.drawLine(curX + 2, y + 8, curX + 1, y + 12, dropColor);
+    g.drawLine(curX + 6, y + 8, curX + 5, y + 12, dropColor);
+    curX += 10 + 2;
+    g.setTextColor(rainColor, TFT_BLACK);
+    g.drawString(rainStr, curX, y, 2);
+}
+
+static void drawClockAt(TFT_eSPI& g, int y) {
+    drawTopHudWeather(g, y);
 }
 
 static void drawHudInto(TFT_eSPI& g, int yOff, const HudCtx& c) {
-    const int topY = 4;
+    const int topY = 1;
     const int dlY  = DST_HEIGHT - 18;
     const int barY = DST_HEIGHT - 2;
 
-    if (yOff < topY + 16 && yOff + RENDER_LINES > topY) {
+    if (yOff == 0) {
         g.setTextDatum(TL_DATUM);
         g.setTextColor(TFT_WHITE, TFT_BLACK);
         char modeBuf[28];
@@ -85,31 +210,15 @@ static void drawHudInto(TFT_eSPI& g, int yOff, const HudCtx& c) {
         } else {
             snprintf(modeBuf, sizeof(modeBuf), " %s ", staCode);
         }
-        int modeW = g.drawString(modeBuf, 4, topY - yOff, 2);
-        int badgeX = 4 + modeW + 3;
-        if (g_sdReady) {
-            int iconY = (topY - yOff) + 2;
-            g.fillRoundRect(badgeX, iconY, 10, 12, 1, TFT_GREENYELLOW);
-            g.fillRect(badgeX + 2, iconY + 1, 6, 2, TFT_BLACK); // Notch cut
-            g.fillRect(badgeX + 2, iconY + 5, 6, 5, TFT_BLACK); // Label area
-            g.drawPixel(badgeX + 8, iconY, TFT_BLACK);          // Top-right cut
-            badgeX += 14;
-        }
-        if (g_autoCycle && !c.zoom) {
-            int cx = badgeX + 5;
-            int cy = (topY - yOff) + 7;
-            g.drawCircle(cx, cy, 5, TFT_CYAN);
-            g.fillTriangle(cx + 3, cy - 5, cx + 6, cy - 2, cx + 1, cy - 2, TFT_CYAN);
-            g.fillTriangle(cx - 3, cy + 5, cx - 6, cy + 2, cx - 1, cy + 2, TFT_CYAN);
-        }
+        g.drawString(modeBuf, 4, topY, 2);
 
-        drawClockAt(g, topY - yOff);
+        drawTopHudWeather(g, topY);
 
         char buf[16];
         snprintf(buf, sizeof(buf), " %d/%d ", c.dispFrame + 1, c.totalFrames);
         g.setTextDatum(TR_DATUM);
         g.setTextColor(TFT_WHITE, (c.dispFrame == c.totalFrames - 1) ? TFT_DARKGREEN : TFT_NAVY);
-        g.drawString(buf, DST_WIDTH - 4, topY - yOff, 2);
+        g.drawString(buf, DST_WIDTH - 4, topY, 2);
     }
 
     if (yOff + RENDER_LINES > dlY) {
@@ -128,12 +237,6 @@ static void drawHudInto(TFT_eSPI& g, int yOff, const HudCtx& c) {
             snprintf(buf, sizeof(buf), " OLD %lum ", (unsigned long)(ageMs / 60000UL));
             g.setTextDatum(TL_DATUM);
             g.setTextColor(TFT_BLACK, TFT_ORANGE);
-            g.drawString(buf, 4, dlY - yOff, 2);
-        } else if (g_rainPct >= 2) {
-            char buf[22];
-            snprintf(buf, sizeof(buf), " RAIN %u%% ", (unsigned)g_rainPct);
-            g.setTextDatum(TL_DATUM);
-            g.setTextColor(TFT_WHITE, TFT_RED);
             g.drawString(buf, 4, dlY - yOff, 2);
         }
 
@@ -191,6 +294,39 @@ static void renderInstantZoomFromFull(uint32_t fullFlashAddr, const uint16_t* pa
 
 static void renderDownloadPreview(int frameIdx);
 
+static bool renderZoomFrameFromSd(const char* path, int frameIdx, const HudCtx& ctx) {
+    if (!g_sdReady) return false;
+    File f = SD.open(path, FILE_READ);
+    if (!f) return false;
+    ZoomCacheHeader hdr;
+    if (f.read((uint8_t*)&hdr, sizeof(hdr)) != sizeof(hdr) || hdr.magic != 0x5A4F4F4D) {
+        f.close();
+        return false;
+    }
+    if (frameIdx < 0 || frameIdx >= hdr.frameCount) {
+        f.close();
+        return false;
+    }
+    uint32_t frameOffset = sizeof(hdr) + (uint32_t)frameIdx * FRAME_BYTES;
+    if (!f.seek(frameOffset)) {
+        f.close();
+        return false;
+    }
+    uint16_t* px = (uint16_t*)spr.getPointer();
+    if (!px) { f.close(); return false; }
+
+    for (int y = 0; y < DST_HEIGHT; y += RENDER_LINES) {
+        size_t byteCount = (size_t)RENDER_LINES * DST_WIDTH;
+        if (f.read(lineIdxBuf, byteCount) != byteCount) break;
+        for (size_t i = 0; i < byteCount; i++) px[i] = hdr.palette[lineIdxBuf[i]];
+        drawHudInto(spr, y, ctx);
+        spr.pushSprite(0, y);
+    }
+    f.close();
+    g_screenHasRadar = true;
+    return true;
+}
+
 static void renderCurrent() {
     if (g_menuOpen || g_activeBank < 0) return;
 
@@ -204,45 +340,49 @@ static void renderCurrent() {
         }
     }
     bool zoom = g_zoomMode && (g_zoomCount > 0 || g_frameCount > 0);
-    int totalSteps = zoom ? (g_zoomCount > 0 ? (int)g_zoomCount : (int)g_frameCount) : (int)g_frameCount;
+    bool sdZoomOk = false;
+    char sdZPath[48] = "";
+    if (zoom && g_sdReady) {
+        getSdZoomPath(g_bankStation, sdZPath, sizeof(sdZPath));
+        if (isSdZoomValid(sdZPath, g_bankStation, g_targetZoomX, g_targetZoomY)) {
+            sdZoomOk = true;
+        }
+    }
+
+    int totalSteps = (int)g_frameCount;
     if (totalSteps <= 0) return;
     if (g_stepIdx < 0 || g_stepIdx >= totalSteps) g_stepIdx = 0;
 
-    int dispFrame = (zoom && g_zoomCount > 0) ? min((int)g_frameCount - 1, g_stepIdx * 2 + 1) : g_stepIdx;
+    int dispFrame = g_stepIdx;
+
+    if (zoom && sdZoomOk) {
+        HudCtx ctx = { dispFrame, totalSteps, g_stepIdx + 1, totalSteps, true, false, false };
+        if (renderZoomFrameFromSd(sdZPath, g_stepIdx, ctx)) {
+            return;
+        }
+    }
+
     bool hasNativeCrop = zoom && (g_zoomCount > 0) &&
                          (g_targetZoomX == g_bankZoomX) &&
                          (g_targetZoomY == g_bankZoomY) &&
                          (g_targetStation == g_bankStation);
 
     if (zoom && !hasNativeCrop) {
-        // Crisp 1:1 HD zoom frames already decoded into the download bank (SD recrop or HTTP)
-        int readyFrames = g_dlZoomReadyFrames;
-        int dlBank      = g_dlTargetBank;
-        int dlStage     = g_dlStage;
-        if ((dlStage == DL_DOWNLOADING || dlStage == DL_SD_RECROP) && readyFrames > 0 && dlBank >= 0 &&
-            dlBank != g_activeBank && g_dlZoomX == g_targetZoomX && g_dlZoomY == g_targetZoomY &&
-            g_dlStation == g_targetStation) {
-            int slots = readyFrames / 2;
-            uint32_t addr = (slots == 0) ? SCRATCH_ZOOM_ADDR : zoomAddr(dlBank, g_stepIdx % slots);
-            int shown     = (slots == 0) ? 0 : ((g_stepIdx % slots) * 2 + 1);
-            HudCtx ctx = { shown, MAX_RADAR_FRAMES, g_stepIdx + 1, totalSteps, true, true, false };
-            renderFrame(addr, g_dlPalette, ctx);
-            return;
-        }
         // Different station still loading -> keep showing the cached map instead of a wrong upscale
         if (g_targetStation != g_bankStation) {
-            HudCtx ctx = { g_stepIdx, (int)g_frameCount, g_stepIdx + 1, totalSteps, false, false, false };
-            renderFrame(fullAddr(g_activeBank, min(g_stepIdx, (int)g_frameCount - 1)), g_palette, ctx);
+            HudCtx ctx = { g_stepIdx, totalSteps, g_stepIdx + 1, totalSteps, false, false, false };
+            renderFrame(fullAddr(g_activeBank, min(g_stepIdx, totalSteps - 1)), g_palette, ctx);
             return;
         }
-        HudCtx ctx = { dispFrame, (int)g_frameCount, g_stepIdx + 1, totalSteps, true, false, true };
+        // Instant Digital Zoom: all 12 frames smoothly from fullAddr!
+        HudCtx ctx = { dispFrame, totalSteps, g_stepIdx + 1, totalSteps, true, false, true };
         renderInstantZoomFromFull(fullAddr(g_activeBank, dispFrame), g_palette, ctx);
         return;
     }
 
-    uint32_t addr = zoom ? zoomAddr(g_activeBank, g_stepIdx)
+    uint32_t addr = zoom ? zoomAddr(g_activeBank, min((int)g_zoomCount - 1, g_stepIdx / 2))
                          : fullAddr(g_activeBank, g_stepIdx);
-    HudCtx ctx = { dispFrame, (int)g_frameCount, g_stepIdx + 1, totalSteps, zoom, false, false };
+    HudCtx ctx = { dispFrame, totalSteps, g_stepIdx + 1, totalSteps, zoom, false, false };
     renderFrame(addr, g_palette, ctx);
 }
 
@@ -415,14 +555,30 @@ static GlobalBootAction checkGlobalBootButton(F onRedraw) {
 // ============================================================================
 // Interactive Menu Screen (Long-Press >= 500ms on Touch Screen)
 // ============================================================================
-static void drawMenuBtn(int x, int y, int w, int h, const char* label, bool active, uint16_t activeBg = TFT_DARKGREEN, uint16_t activeBorder = TFT_GREEN) {
+static void drawMenuBtn(int x, int y, int w, int h, const char* label, bool active, uint16_t activeBg = TFT_DARKGREEN, uint16_t activeBorder = TFT_GREEN, bool doubleBorder = false) {
+    uint16_t bg     = active ? activeBg : 0x18E3;
+    uint16_t border = active ? activeBorder : TFT_CYAN;
+    if (doubleBorder) border = TFT_YELLOW;
+    tft.fillRoundRect(x, y, w, h, 5, bg);
+    tft.drawRoundRect(x, y, w, h, 5, border);
+    if (doubleBorder) {
+        tft.drawRoundRect(x + 1, y + 1, w - 2, h - 2, 4, border);
+    }
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(TFT_WHITE, bg);
+    tft.drawString(label, x + w / 2, y + h / 2, 2);
+}
+
+static void drawMenuBtn2L(int x, int y, int w, int h, const char* line1, const char* line2, bool active, uint16_t activeBg, uint16_t activeBorder, uint16_t line2Color = TFT_WHITE) {
     uint16_t bg     = active ? activeBg : 0x18E3;
     uint16_t border = active ? activeBorder : TFT_CYAN;
     tft.fillRoundRect(x, y, w, h, 5, bg);
     tft.drawRoundRect(x, y, w, h, 5, border);
     tft.setTextDatum(MC_DATUM);
     tft.setTextColor(TFT_WHITE, bg);
-    tft.drawString(label, x + w / 2, y + h / 2, 2);
+    tft.drawString(line1, x + w / 2, y + 18, 2);
+    tft.setTextColor(line2Color, bg);
+    tft.drawString(line2, x + w / 2, y + 40, 1);
 }
 
 // Menu layout (320x240):
@@ -487,78 +643,6 @@ static void waitTouchRelease() {
     delay(20);
 }
 
-// 100x100 BMP Renderer for MicroSD PromptPay QR (/ly-radar/promptpay.bmp)
-static bool drawBmp100(const char* filename, int x, int y) {
-    if (!g_sdReady || !SD.exists(filename)) return false;
-    File bmpFile = SD.open(filename, FILE_READ);
-    if (!bmpFile) return false;
-
-    uint16_t magic = 0;
-    bmpFile.read((uint8_t*)&magic, 2);
-    if (magic != 0x4D42) { // "BM"
-        bmpFile.close();
-        return false;
-    }
-    bmpFile.seek(10);
-    uint32_t imageOffset = 0;
-    bmpFile.read((uint8_t*)&imageOffset, 4);
-
-    uint32_t headerSize = 0;
-    int32_t  bmpWidth = 0, bmpHeight = 0;
-    uint16_t planes = 0, bitsPerPixel = 0;
-
-    bmpFile.read((uint8_t*)&headerSize, 4);
-    bmpFile.read((uint8_t*)&bmpWidth, 4);
-    bmpFile.read((uint8_t*)&bmpHeight, 4);
-    bmpFile.read((uint8_t*)&planes, 2);
-    bmpFile.read((uint8_t*)&bitsPerPixel, 2);
-
-    if (bmpWidth <= 0 || bmpHeight == 0 || (bitsPerPixel != 24 && bitsPerPixel != 16)) {
-        bmpFile.close();
-        return false;
-    }
-
-    bool flip = true;
-    if (bmpHeight < 0) {
-        bmpHeight = -bmpHeight;
-        flip = false;
-    }
-
-    int drawW = min((int)bmpWidth, 100);
-    int drawH = min((int)bmpHeight, 100);
-    size_t rowBytes = ((bmpWidth * (bitsPerPixel / 8) + 3) / 4) * 4;
-
-    uint8_t* rowBuf = (uint8_t*)malloc(rowBytes);
-    if (!rowBuf) {
-        bmpFile.close();
-        return false;
-    }
-
-    for (int row = 0; row < drawH; row++) {
-        int targetY = flip ? (y + (drawH - 1 - row)) : (y + row);
-        uint32_t rowOffset = imageOffset + (uint32_t)row * rowBytes;
-        bmpFile.seek(rowOffset);
-        bmpFile.read(rowBuf, rowBytes);
-
-        for (int col = 0; col < drawW; col++) {
-            uint16_t color = TFT_WHITE;
-            if (bitsPerPixel == 24) {
-                uint8_t b = rowBuf[col * 3 + 0];
-                uint8_t g = rowBuf[col * 3 + 1];
-                uint8_t r = rowBuf[col * 3 + 2];
-                color = rgb888To565(r, g, b);
-            } else if (bitsPerPixel == 16) {
-                color = *(uint16_t*)&rowBuf[col * 2];
-            }
-            tft.drawPixel(x + col, targetY, color);
-        }
-    }
-
-    free(rowBuf);
-    bmpFile.close();
-    return true;
-}
-
 static void drawMenuScreen();
 
 // ============================================================================
@@ -589,7 +673,7 @@ static void drawAboutScreen() {
     tft.drawString("Board: ESP32-2432S028", lx, 68, 2);
     tft.drawString("TFT: 2.8\" ST7789/ILI9341", lx, 86, 2);
     tft.drawString("Stations: 12 BMA & TMD", lx, 104, 2);
-    tft.drawString("CPU: 160MHz Power-Save", lx, 122, 2);
+    tft.drawString("CPU: 80MHz Power-Save", lx, 122, 2);
     tft.drawString("Cache: Double Flash + SD", lx, 140, 2);
 
     tft.setTextColor(TFT_CYAN, 0x0821);
@@ -616,22 +700,12 @@ static void drawAboutScreen() {
     tft.setTextColor(TFT_WHITE, 0x0113);
     tft.drawString("PromptPay", rx + boxW / 2, ry + 10, 2);
 
-    // 116x116 QR Area
+    // 116x116 High-contrast, pixel-perfect Flash ROM QR (Hardcoded, 0 bytes RAM)
     int qrX = rx + (boxW - PROMPTPAY_QR_WIDTH) / 2;
     int qrY = ry + 22;
-    bool loadedBmp = false;
-
-    if (g_sdReady) {
-        if (SD.exists("/ly-radar/promptpay.bmp"))      loadedBmp = drawBmp100("/ly-radar/promptpay.bmp", qrX + 8, qrY + 8);
-        else if (SD.exists("/ly-radar/qr.bmp"))        loadedBmp = drawBmp100("/ly-radar/qr.bmp", qrX + 8, qrY + 8);
-    }
-
-    if (!loadedBmp) {
-        // High-contrast, pixel-perfect Flash ROM QR (0 bytes RAM)
-        tft.setSwapBytes(true);
-        tft.pushImage(qrX, qrY, PROMPTPAY_QR_WIDTH, PROMPTPAY_QR_HEIGHT, promptpay_qr_img);
-        tft.setSwapBytes(false);
-    }
+    tft.setSwapBytes(true);
+    tft.pushImage(qrX, qrY, PROMPTPAY_QR_WIDTH, PROMPTPAY_QR_HEIGHT, promptpay_qr_img);
+    tft.setSwapBytes(false);
 
     // Bottom Card text
     tft.setTextDatum(MC_DATUM);
@@ -685,23 +759,40 @@ static void drawMenuScreen() {
     drawMenuBtn(242, 2, 74, 24, "CLOSE X", false, TFT_MAROON);
 
     // Rows 1-3: 12 Radar Stations (3 rows of 4 columns)
+    int yellowCount = 0;
     for (int i = 0; i < NUM_STATIONS; i++) {
+        if (g_autoStationMask & (1 << i)) yellowCount++;
         int col = i & 3;
         int row = i / 4;
         int y   = (row == 0) ? MENU_R1_Y : ((row == 1) ? MENU_R2_Y : MENU_R3_Y);
         int h   = (row == 0) ? MENU_R1_H : ((row == 1) ? MENU_R2_H : MENU_R3_H);
         uint16_t activeBg = (i < 2) ? TFT_DARKGREEN : ((i < 4) ? 0x0339 : ((i < 8) ? 0x1A47 : 0x02CD));
+        bool isYellow = (g_autoStationMask & (1 << i)) != 0;
+        uint16_t border = isYellow ? TFT_YELLOW : (g_targetStation == i ? TFT_GREEN : TFT_CYAN);
         drawMenuBtn(4 + col * 79, y, MENU_COL4_W, h, kStations[i].shortCode,
-                    g_targetStation == i, activeBg);
+                    g_targetStation == i, activeBg, border, isYellow);
     }
 
     // Row 4: AUTO / Timelapse / Brightness / Calibrate Touch / Update Now
-    const char* brLabels[4] = { "BRI AUTO", "BRI 100%", "BRI 55%", "BRI 20%" };
     uint16_t autoBg     = g_autoCycle ? TFT_DARKGREEN : 0x7800; // Green when ON, Dark Red when OFF
-    uint16_t autoBorder = g_autoCycle ? TFT_GREEN     : TFT_RED;
-    drawMenuBtn(4 + 0 * 63, MENU_R4_Y, MENU_COL5_W, MENU_R4_H, "AUTO", true, autoBg, autoBorder);
+    uint16_t autoBorder = g_autoCycle ? (yellowCount > 0 ? TFT_YELLOW : TFT_GREEN) : TFT_RED;
+
+    char autoSub[16];
+    if (!g_autoCycle) {
+        snprintf(autoSub, sizeof(autoSub), "OFF");
+    } else if (yellowCount > 0) {
+        snprintf(autoSub, sizeof(autoSub), "%d", yellowCount);
+    } else {
+        snprintf(autoSub, sizeof(autoSub), "ALL");
+    }
+    drawMenuBtn2L(4 + 0 * 63, MENU_R4_Y, MENU_COL5_W, MENU_R4_H, "AUTO", autoSub, true, autoBg, autoBorder,
+                  (g_autoCycle && yellowCount > 0) ? TFT_YELLOW : TFT_WHITE);
+
     drawMenuBtn(4 + 1 * 63, MENU_R4_Y, MENU_COL5_W, MENU_R4_H, "TLAPSE",   g_timelapseMode, TFT_MAGENTA);
-    drawMenuBtn(4 + 2 * 63, MENU_R4_Y, MENU_COL5_W, MENU_R4_H, brLabels[g_brightMode & 3], false, 0x3186);
+
+    const char* brSub[4] = { "AUTO", "100%", "55%", "20%" };
+    drawMenuBtn2L(4 + 2 * 63, MENU_R4_Y, MENU_COL5_W, MENU_R4_H, "BRI", brSub[g_brightMode & 3], false, 0x3186, TFT_CYAN, TFT_YELLOW);
+
     drawMenuBtn(4 + 3 * 63, MENU_R4_Y, MENU_COL5_W, MENU_R4_H, "CALIB",    false, 0x3186);
     drawMenuBtn(4 + 4 * 63, MENU_R4_Y, MENU_COL5_W, MENU_R4_H, "UPDATE",   false, TFT_DARKCYAN);
     sdLog("[MENU] LyRadar Menu opened (12 stations + Timelapse)\n");
@@ -724,7 +815,6 @@ static void selectZoomRegion(uint16_t zx, uint16_t zy) {
     prefs.end();
 
     if (!g_zoomMode) {
-        g_stepIdx  = g_stepIdx / 2;
         g_zoomMode = true;
     }
     if (changed || g_targetZoomX != g_bankZoomX || g_targetZoomY != g_bankZoomY) {
@@ -954,8 +1044,8 @@ static bool tryConnect(const String& ssid, const String& pass) {
     uint32_t start = millis();
     while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) delay(250);
     if (WiFi.status() == WL_CONNECTED) {
-        WiFi.setSleep(false);
-        esp_wifi_set_ps(WIFI_PS_NONE);
+        WiFi.setSleep(true);
+        esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
         return true;
     }
     WiFi.disconnect();
@@ -1560,8 +1650,8 @@ static void connectWiFi() {
         sdLog("[WIFI] Connected OK, IP: %s\n", WiFi.localIP().toString().c_str());
         configTime(7 * 3600, 0, "pool.ntp.org", "time.navy.mi.th", "time.google.com");
         WiFi.setAutoReconnect(true);
-        WiFi.setSleep(false);
-        esp_wifi_set_ps(WIFI_PS_NONE);
+        WiFi.setSleep(true);
+        esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
     } else {
         sdLog("[WIFI] Connection failed, launching on-screen WiFi Scanner\n");
         bool ok = runWiFiScannerAndKeyboard();
@@ -1569,8 +1659,8 @@ static void connectWiFi() {
             sdLog("[WIFI] Connected OK via Scanner, IP: %s\n", WiFi.localIP().toString().c_str());
             configTime(7 * 3600, 0, "pool.ntp.org", "time.navy.mi.th", "time.google.com");
             WiFi.setAutoReconnect(true);
-            WiFi.setSleep(false);
-            esp_wifi_set_ps(WIFI_PS_NONE);
+            WiFi.setSleep(true);
+            esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
         } else if (g_activeBank < 0) {
             sdLog("[WIFI] Scanner cancelled, launching Captive Portal fallback: %s\n", CAPTIVE_PORTAL_SSID);
             runCaptivePortalSetup();

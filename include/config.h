@@ -4,7 +4,7 @@
 // LyRadar CYD - Version & Project Info
 // ============================================================================
 #define APP_NAME            "LyRadar CYD"
-#define APP_VERSION         "v1.0.1"
+#define APP_VERSION         "v1.3.0"
 #define APP_AUTHOR          "Zotix"
 #define APP_GITHUB          "https://github.com/zotix/LyRadar"
 

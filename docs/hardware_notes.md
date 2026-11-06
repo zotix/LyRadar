@@ -47,7 +47,7 @@ Defined in [`partitions.csv`](../partitions.csv):
 ## 3. MicroSD File Structure (`/ly-radar/`)
 
 - `/ly-radar/cache/`: Cached animated GIF files (`sta_0.gif` .. `sta_11.gif`)
+- `/ly-radar/zoom/`: Cached 12-frame HD Zoom binary files (`sta_<id>.z12`)
 - `/ly-radar/hist/`: Historical radar captures (`sta_<id>/YYYYMMDD_HHMM.rad`)
 - `/ly-radar/wifi.txt`: Automatic WiFi configuration (auto-deleted to `wifi.done`)
-- `/ly-radar/promptpay.bmp`: 110x110 24-bit/16-bit BMP PromptPay QR Code
 - `/ly-radar/log.txt`: System log & reset diagnostics

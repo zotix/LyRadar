@@ -76,9 +76,22 @@ static void handleUserInput() {
                 lastSeen = millis();
                 if (!longFired && (millis() - downMs >= 380)) {
                     longFired  = true;
-                    g_menuOpen = !g_menuOpen;
-                    if (g_menuOpen) drawMenuScreen();
-                    else            restoreRadarScreen();
+                    if (g_menuOpen && ty >= MENU_R1_Y - 3 && ty < MENU_R4_Y - 4) {
+                        int row = (ty < MENU_R2_Y - 2) ? 0 : ((ty < MENU_R3_Y - 2) ? 1 : 2);
+                        int col = constrain((tx - 2) / 79, 0, 3);
+                        uint8_t targetSta = (uint8_t)(row * 4 + col);
+                        if (targetSta < NUM_STATIONS) {
+                            g_autoStationMask ^= (1 << targetSta);
+                            prefs.begin("radar_cfg", false);
+                            prefs.putUShort("sta_mask", g_autoStationMask);
+                            prefs.end();
+                            drawMenuScreen();
+                        }
+                    } else {
+                        g_menuOpen = !g_menuOpen;
+                        if (g_menuOpen) drawMenuScreen();
+                        else            restoreRadarScreen();
+                    }
                     break;
                 }
             } else if (millis() - lastSeen > 70) {
@@ -152,7 +165,6 @@ static void handleUserInput() {
 
             selectZoomRegion((uint16_t)newZx, (uint16_t)newZy);
         } else {
-            g_stepIdx  = g_stepIdx * 2 + 1;
             g_zoomMode = false;
         }
         restoreRadarScreen();
@@ -164,7 +176,7 @@ static void handleUserInput() {
 // ============================================================================
 void setup() {
     WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
-    setCpuFrequencyMhz(160); // Method 2: 160 MHz saves ~25 mA & stays cool (APB bus stays 80 MHz)
+    setCpuFrequencyMhz(80); // 80 MHz base for maximum power saving & coolest running (APB bus stays 80 MHz)
 
     initScalingLookupTables();
 
@@ -197,6 +209,7 @@ void setup() {
     g_targetZoomY   = prefs.getUShort("zy",  ZOOM_SRC_Y);
     g_touchMapMode  = prefs.getUChar("tmap", 0);
     g_autoCycle     = prefs.getBool("auto",  true);
+    g_autoStationMask = prefs.getUShort("sta_mask", 0);
     touch.loadCalibration(prefs);
     prefs.end();
 
@@ -308,21 +321,19 @@ void loop() {
     if (millis() - g_lastClockTick >= 1000) {
         g_lastClockTick = millis();
         if (g_brightMode == 0 || g_standbyMode) applyBacklight();
-        // Clock is rendered inside the sprite every 350ms during live animation (zero flicker).
-        // Only push directly to TFT when paused so time still increments without tearing.
+        // Weather HUD is rendered inside the sprite every 350ms during live animation (zero flicker).
+        // Only push directly to TFT when paused so time & weather still update without tearing.
         if (g_paused && g_screenHasRadar && !g_menuOpen) {
-            drawClockAt(tft, 4);
+            drawTopHudWeather(tft, 1);
         }
     }
 
     // 4. Animation (Full mode: 12 frames @ 350ms; Zoom mode: 6 even frames @ 700ms = 2x delay)
     if (!g_menuOpen) {
         if (g_activeBank >= 0 && !g_paused) {
-            bool zoom      = g_zoomMode && (g_zoomCount > 0 || g_frameCount > 0);
-            int totalSteps = zoom ? (g_zoomCount > 0 ? (int)g_zoomCount : (int)g_frameCount) : (int)g_frameCount;
+            int totalSteps = (int)g_frameCount;
             if (totalSteps > 0) {
-                uint32_t frameDelay = zoom ? (FRAME_DELAY_MS * 2) : FRAME_DELAY_MS;
-                uint32_t waitMs     = (g_stepIdx >= totalSteps - 1) ? LAST_FRAME_PAUSE_MS : frameDelay;
+                uint32_t waitMs = (g_stepIdx >= totalSteps - 1) ? LAST_FRAME_PAUSE_MS : FRAME_DELAY_MS;
                 if (millis() - g_lastFrameStep >= waitMs) {
                     g_lastFrameStep = millis();
                     g_stepIdx       = (g_stepIdx + 1) % totalSteps;
@@ -346,7 +357,6 @@ void loop() {
             resetNeeded = true;
         }
         if (g_zoomMode) {
-            g_stepIdx = g_stepIdx * 2 + 1;
             g_zoomMode = false;
             resetNeeded = true;
         }
@@ -366,14 +376,14 @@ void loop() {
         }
     }
 
-    // 5b. Display Standby (10m inactivity & rain < 2% -> dim to duty 15 / ~6%, wake on touch or rain)
-    static constexpr uint32_t STANDBY_TIMEOUT_MS = 10 * 60000UL;
-    if (!g_standbyMode && (millis() - g_lastTouchMs >= STANDBY_TIMEOUT_MS) && g_rainPct < 2) {
+    // 5b. Smart Display Eco Standby (3m inactivity & no rain -> dim to duty 30 / ~12%, wake on touch or rain)
+    static constexpr uint32_t STANDBY_TIMEOUT_MS = 3 * 60000UL;
+    if (!g_standbyMode && (millis() - g_lastTouchMs >= STANDBY_TIMEOUT_MS) && g_rainPct < 1) {
         g_standbyMode = true;
         applyBacklight();
-        sdLog("[PWR] Inactivity > 10m & no rain -> entering Standby mode (duty 15)\n");
+        sdLog("[PWR] Inactivity > 3m & no rain -> entering Eco Standby mode (duty 30)\n");
     }
-    if (g_standbyMode && g_rainPct >= 2) {
+    if (g_standbyMode && g_rainPct >= 1) {
         g_standbyMode = false;
         applyBacklight();
         g_lastTouchMs = millis();
@@ -381,31 +391,30 @@ void loop() {
     }
 
     // 6. Station Auto-Cycling (30s per station, paused when in Zoom / Menu / Timelapse / Paused)
-    //    Skips stations whose radar images have not finished loading yet!
+    //    Seamlessly advances through all 12 stations across Thailand!
     if (g_autoCycle && !g_zoomMode && !g_menuOpen && !g_timelapseMode && !g_paused) {
         // Only cycle when current bank matches target station and has played for full 30s
         if (g_bankStation == g_targetStation && (millis() - g_lastStationCycleMs >= AUTO_CYCLE_INTERVAL_MS)) {
             g_lastStationCycleMs = millis();
-            uint8_t nextSta = g_targetStation;
-            bool found = false;
-            for (int i = 1; i <= NUM_STATIONS; i++) {
-                uint8_t candidate = (g_targetStation + i) % NUM_STATIONS;
-                if (isStationCacheReady(candidate)) {
-                    nextSta = candidate;
-                    found = true;
-                    break;
+            uint8_t nextSta = (g_targetStation + 1) % NUM_STATIONS;
+            if (g_autoStationMask != 0) {
+                for (int i = 1; i <= NUM_STATIONS; i++) {
+                    uint8_t cand = (g_targetStation + i) % NUM_STATIONS;
+                    if (g_autoStationMask & (1 << cand)) {
+                        nextSta = cand;
+                        break;
+                    }
                 }
             }
-            if (found && nextSta != g_targetStation) {
-                g_targetStation = nextSta;
-                uint16_t cx, cy;
-                getStationDefaultZoom(nextSta, kStations[nextSta].defWidth, kStations[nextSta].defHeight, cx, cy);
-                g_targetZoomX = cx;
-                g_targetZoomY = cy;
-                updateRegionName(cx, cy);
-                g_forceRecrop = true;
-                requestRadarUpdate();
-            }
+            g_targetStation = nextSta;
+            uint16_t cx, cy;
+            getStationDefaultZoom(nextSta, kStations[nextSta].defWidth, kStations[nextSta].defHeight, cx, cy);
+            g_targetZoomX = cx;
+            g_targetZoomY = cy;
+            updateRegionName(cx, cy);
+            g_forceRecrop = true;
+            requestRadarUpdate();
+            sdLog("[AUTO] Cycling to station %u (%s)\n", (unsigned)nextSta, kStations[nextSta].shortCode);
         }
     }
 
