@@ -85,10 +85,10 @@
   - Lazada: https://s.lazada.co.th/s.ZnQhuQ
 - 🖨️ **เคสประกอบ (Enclosure Case)**:
   - Shopee: https://s.shopee.co.th/7AeuU66ION
-  - Lazada: https://s.lazada.co.th/s.ZnQhH
+  - Lazada: https://s.lazada.co.th/s.ZnQhHR
 - 💾 **MicroSD Card (FAT32)**:
   - Shopee: https://s.shopee.co.th/1gJxwPmLya
-  - Lazada: https://s.lazada.co.th/s.ZnQhr
+  - Lazada: https://s.lazada.co.th/s.ZnQhrR
 
 ดูรายละเอียดพินทั้งหมดได้ที่ [docs/hardware_notes.md](docs/hardware_notes.md)
 
