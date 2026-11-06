@@ -78,6 +78,18 @@ Engineered at the bare-metal level using **Dual-Core FreeRTOS**, **Double-Buffer
   - 1-USB version (ILI9341 display controller, XPT2046 touch) — *Environment: `cyd_1usb_ili9341`*
 - **MicroSD Card**: Formatted as FAT32, inserted into the rear slot (connected via VSPI bus).
 
+### 🛒 Where to Buy Hardware (Shopee & Lazada)
+
+- 📟 **ESP32-2432S028 CYD Board (2.8" Touch)**:
+  - Shopee: https://s.shopee.co.th/6VPDgpaRX9
+  - Lazada: https://s.lazada.co.th/s.ZnQhuQ
+- 🖨️ **Enclosure Case**:
+  - Shopee: https://s.shopee.co.th/7AeuU66ION
+  - Lazada: https://s.lazada.co.th/s.ZnQhH
+- 💾 **MicroSD Card (FAT32)**:
+  - Shopee: https://s.shopee.co.th/1gJxwPmLya
+  - Lazada: https://s.lazada.co.th/s.ZnQhr
+
 See [docs/hardware_notes.md](docs/hardware_notes.md) for full GPIO pinout mappings.
 
 ---

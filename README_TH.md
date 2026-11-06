@@ -78,6 +78,18 @@
   - รุ่น 1-USB (ชิปจอ ILI9341, ทัช XPT2046) — *Environment: `cyd_1usb_ili9341`*
 - **MicroSD Card**: ฟอร์แมตแบบ FAT32 เสียบเข้าช่องด้านหลังบอร์ด (เชื่อมต่อผ่านขา VSPI)
 
+### 🛒 พิกัดสั่งซื้ออุปกรณ์ (Where to Buy Hardware)
+
+- 📟 **บอร์ด ESP32-2432S028 CYD (2.8" Touch)**:
+  - Shopee: https://s.shopee.co.th/6VPDgpaRX9
+  - Lazada: https://s.lazada.co.th/s.ZnQhuQ
+- 🖨️ **เคสประกอบ (Enclosure Case)**:
+  - Shopee: https://s.shopee.co.th/7AeuU66ION
+  - Lazada: https://s.lazada.co.th/s.ZnQhH
+- 💾 **MicroSD Card (FAT32)**:
+  - Shopee: https://s.shopee.co.th/1gJxwPmLya
+  - Lazada: https://s.lazada.co.th/s.ZnQhr
+
 ดูรายละเอียดพินทั้งหมดได้ที่ [docs/hardware_notes.md](docs/hardware_notes.md)
 
 ---
